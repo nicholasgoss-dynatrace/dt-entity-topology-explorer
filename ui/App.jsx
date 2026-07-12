@@ -15,12 +15,8 @@ import { CriticalIcon } from '@dynatrace/strato-icons';
 import { getAppVersion } from '@dynatrace-sdk/app-environment';
 import ApplicationMap from './components/ApplicationMap';
 
-/**
- * Normalize service names by stripping protocol suffixes Dynatrace adds for
- * inferred remote services, e.g.:
- *   "oteldemo.ProductCatalogService (grpc://oteldemo.ProductCatalogService)"
- *   → "oteldemo.ProductCatalogService"
- */
+// ── Normalisation ──────────────────────────────────────────────────────────────
+
 function normalizeServiceName(name) {
   return name.replace(/\s+\([a-z][a-z0-9+\-.]*:\/\/[^)]*\)$/i, '').trim();
 }
@@ -28,9 +24,10 @@ function normalizeServiceName(name) {
 function normalizeEdges(edges) {
   const seen = new Set();
   return edges
-    .map(({ source, target }) => ({
+    .map(({ source, target, edgeType }) => ({
       source: normalizeServiceName(source),
       target: normalizeServiceName(target),
+      edgeType: edgeType || 'CALLS',
     }))
     .filter(({ source, target }) => {
       if (source === target) return false;
@@ -41,64 +38,140 @@ function normalizeEdges(edges) {
     });
 }
 
-/**
- * Detect "Applications" from a flat edge list plus the full set of known service names.
- * An Application = a root service (nothing calls it) + its full transitive dependency tree.
- * Services with no relationships at all appear as single-node Applications.
- */
-function detectApplications(edges, allServiceNames = []) {
-  const allNodes = new Set();
-  const calledBy = new Set();
+// ── Application detection ──────────────────────────────────────────────────────
 
-  edges.forEach(({ source, target }) => {
-    allNodes.add(source);
-    allNodes.add(target);
-    calledBy.add(target);
+/**
+ * Build application objects.
+ *
+ * Prefers real Dynatrace APPLICATION entities as roots. If none are found (or
+ * an APPLICATION has no reachable service edges) falls back to inferring roots
+ * from the service call graph (nothing-calls-it heuristic).
+ */
+function detectApplications(serviceEdges, allServiceNames, dtApplications, entityDetails) {
+  const nameMap = {}; // entityId → displayName for services
+  Object.values(entityDetails).forEach(d => {
+    if (d.entityType === 'SERVICE') nameMap[d.entityId] = d.displayName;
   });
 
-  allServiceNames.forEach(name => allNodes.add(name));
-
-  const roots = [...allNodes].filter(node => !calledBy.has(node));
-
+  // Build service adjacency
   const adjacency = {};
-  edges.forEach(({ source, target }) => {
+  const calledBy   = new Set();
+  const allNodes   = new Set(allServiceNames.map(normalizeServiceName));
+
+  serviceEdges.forEach(({ source, target }) => {
     if (!adjacency[source]) adjacency[source] = [];
     adjacency[source].push(target);
+    calledBy.add(target);
+    allNodes.add(source);
+    allNodes.add(target);
   });
 
-  return roots.map(root => {
+  function bfs(root) {
     const visited = new Set();
     const reachableEdges = [];
     const queue = [root];
-
-    while (queue.length > 0) {
+    while (queue.length) {
       const node = queue.shift();
       if (visited.has(node)) continue;
       visited.add(node);
       (adjacency[node] || []).forEach(target => {
-        reachableEdges.push({ source: node, target });
+        reachableEdges.push({ source: node, target, edgeType: 'CALLS' });
         if (!visited.has(target)) queue.push(target);
       });
     }
+    return { visited, reachableEdges };
+  }
 
-    return {
-      name: root,
+  const apps = [];
+
+  // ── Try real DT APPLICATION entities first ────────────────────────────────
+  if (dtApplications && dtApplications.length > 0) {
+    for (const dtApp of dtApplications) {
+      // Entry services are those the DT app directly calls (by entityId → name)
+      const entryServices = (dtApp.calledServiceIds || [])
+        .map(id => nameMap[id])
+        .filter(Boolean)
+        .map(normalizeServiceName)
+        .filter(name => allNodes.has(name));
+
+      // BFS from each entry service
+      const appVisited = new Set();
+      const appEdges   = [];
+      for (const entry of entryServices) {
+        const { visited, reachableEdges } = bfs(entry);
+        visited.forEach(n => appVisited.add(n));
+        reachableEdges.forEach(e => appEdges.push(e));
+      }
+
+      if (appVisited.size === 0 && entryServices.length === 0) continue;
+
+      // Include the DT app entity itself as a node
+      const entityDetail = entityDetails[dtApp.entityId] || {
+        entityId: dtApp.entityId, entityType: 'APPLICATION',
+        displayName: dtApp.displayName,
+        appType: dtApp.appType,
+        managementZones: dtApp.managementZones || [],
+        tags: dtApp.tags || [],
+      };
+
+      apps.push({
+        name:         dtApp.displayName,
+        entityId:     dtApp.entityId,
+        isDtApp:      true,
+        serviceCount: appVisited.size,
+        services:     [...appVisited],
+        edges:        appEdges,
+        appDetail:    entityDetail,
+        managementZones: dtApp.managementZones || [],
+      });
+    }
+  }
+
+  // ── Fall back to inferred roots for any services not claimed by a DT app ──
+  const claimedServices = new Set(apps.flatMap(a => a.services));
+  const unclaimedNodes  = [...allNodes].filter(n => !claimedServices.has(n));
+  const unclaimedCalledBy = new Set(
+    serviceEdges
+      .filter(e => unclaimedNodes.includes(e.source) || unclaimedNodes.includes(e.target))
+      .map(e => e.target)
+  );
+  const inferredRoots = unclaimedNodes.filter(n => !unclaimedCalledBy.has(n));
+
+  for (const root of inferredRoots) {
+    const { visited, reachableEdges } = bfs(root);
+    apps.push({
+      name:         root,
+      entityId:     null,
+      isDtApp:      false,
       serviceCount: visited.size,
-      services: [...visited],
-      edges: reachableEdges,
-    };
-  }).sort((a, b) => a.name.localeCompare(b.name));
+      services:     [...visited],
+      edges:        reachableEdges,
+      appDetail:    null,
+      managementZones: [...visited].flatMap(svc => {
+        const svcId = Object.values(entityDetails).find(
+          d => d.entityType === 'SERVICE' && d.displayName === svc
+        )?.entityId;
+        return svcId ? (entityDetails[svcId]?.managementZones || []) : [];
+      }),
+    });
+  }
+
+  return apps.sort((a, b) => a.name.localeCompare(b.name));
 }
 
+// ── AppContent ─────────────────────────────────────────────────────────────────
 
 function AppContent() {
-  const [edges, setEdges] = useState([]);
-  const [applications, setApplications] = useState([]);
-  const [entityDetails, setEntityDetails] = useState({});
-  const [totalServices, setTotalServices] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
-  const [timeframe, setTimeframe] = useState({ from: 'now-2h', to: 'now' });
+  const [applications,     setApplications]     = useState([]);
+  const [entityDetails,    setEntityDetails]     = useState({});
+  const [allEdges,         setAllEdges]          = useState([]);
+  const [problems,         setProblems]          = useState({});
+  const [allMZs,           setAllMZs]            = useState([]);
+  const [selectedMZs,      setSelectedMZs]       = useState([]);
+  const [counts,           setCounts]            = useState({});
+  const [loading,          setLoading]           = useState(true);
+  const [error,            setError]             = useState(null);
+  const [timeframe,        setTimeframe]         = useState({ from: 'now-2h', to: 'now' });
 
   useEffect(() => { loadTopology('now-2h', 'now'); }, []);
 
@@ -118,22 +191,37 @@ function AppContent() {
       const result = await response.json();
       if (!result.success) throw new Error(result.error || 'Failed to fetch topology');
 
-      const fetchedEdges = normalizeEdges(result.edges || []);
-
-      // Normalize entity detail keys the same way edge names are normalized
+      // Normalize entity detail keys (strip protocol suffixes)
       const rawDetails = result.entityDetails || {};
       const normalizedDetails = {};
-      Object.entries(rawDetails).forEach(([name, details]) => {
-        normalizedDetails[normalizeServiceName(name)] = details;
+      Object.entries(rawDetails).forEach(([key, val]) => {
+        const d = val;
+        if (d.entityType === 'SERVICE') {
+          normalizedDetails[normalizeServiceName(d.displayName)] = d;
+          // Also keep entityId key for cross-type lookups
+          normalizedDetails[d.entityId] = d;
+        } else {
+          normalizedDetails[d.entityId]     = d;
+          normalizedDetails[d.displayName]  = d;
+        }
       });
 
-      const rawServiceNames = result.allServiceNames || [];
-      const normalizedServiceNames = [...new Set(rawServiceNames.map(normalizeServiceName))];
+      const serviceEdges = normalizeEdges(result.serviceEdges || []);
+      const allEdgesFull = normalizeEdges(result.edges || []);
+      const normalizedServiceNames = [...new Set(
+        (result.allServiceNames || []).map(normalizeServiceName)
+      )];
 
-      setEdges(fetchedEdges);
       setEntityDetails(normalizedDetails);
-      setApplications(detectApplications(fetchedEdges, normalizedServiceNames));
-      setTotalServices(result.totalServices || normalizedServiceNames.length);
+      setAllEdges(allEdgesFull);
+      setProblems(result.problems || {});
+      setAllMZs(result.allManagementZones || []);
+      setCounts(result.counts || {});
+      setApplications(detectApplications(
+        serviceEdges, normalizedServiceNames,
+        result.dtApplications || [],
+        normalizedDetails,
+      ));
     } catch (err) {
       setError(err.message);
       console.error('Topology load error:', err);
@@ -142,213 +230,207 @@ function AppContent() {
     }
   };
 
-  // ── Export helpers ──────────────────────────────────────────────────────────
+  // ── Management zone filter ─────────────────────────────────────────────────
+
+  const toggleMZ = (mz) => setSelectedMZs(prev =>
+    prev.includes(mz) ? prev.filter(m => m !== mz) : [...prev, mz]
+  );
+
+  const filteredApplications = selectedMZs.length === 0
+    ? applications
+    : applications.filter(app =>
+        app.managementZones.some(mz => selectedMZs.includes(mz))
+      );
+
+  // ── Export helpers ─────────────────────────────────────────────────────────
 
   const exportFile = (content, filename, type) => {
     const blob = new Blob([content], { type });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const url  = URL.createObjectURL(blob);
+    const a    = document.createElement('a');
     a.href = url; a.download = filename; a.click();
     URL.revokeObjectURL(url);
   };
 
-  const esc = s => String(s).replace(/[<>&'"]/g, c =>
-    ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
-
+  const esc     = s => String(s).replace(/[<>&'"]/g,
+    c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
   const csvCell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
-  /**
-   * Build a nested dependency tree from an app's edge list.
-   * Each node includes entity metadata for enriched JSON / XML export.
-   */
   const buildTree = (app) => {
-    const adjacency = {};
+    const adj = {};
     app.edges.forEach(({ source, target }) => {
-      if (!adjacency[source]) adjacency[source] = [];
-      adjacency[source].push(target);
+      if (!adj[source]) adj[source] = [];
+      adj[source].push(target);
     });
-
     const buildNode = (name, visited = new Set()) => {
       const d = entityDetails[name] || {};
       const node = {
-        name,
-        entityId: d.entityId || null,
-        serviceType: d.serviceType || null,
-        technology: d.technology || null,
-        managementZones: d.managementZones || [],
-        tags: d.tags || [],
-        firstSeen: d.firstSeen || null,
-        lastSeen: d.lastSeen || null,
+        name, entityId: d.entityId || null, serviceType: d.serviceType || null,
+        technology: d.technology || null, managementZones: d.managementZones || [],
+        tags: d.tags || [], firstSeen: d.firstSeen || null, lastSeen: d.lastSeen || null,
+        hasProblem: d.entityId ? !!problems[d.entityId] : false,
+        problemSeverity: d.entityId ? (problems[d.entityId] || null) : null,
         calls: [],
       };
       if (visited.has(name)) { node._cyclic = true; return node; }
       const next = new Set(visited).add(name);
-      (adjacency[name] || []).forEach(child => node.calls.push(buildNode(child, next)));
+      (adj[name] || []).forEach(child => node.calls.push(buildNode(child, next)));
       return node;
     };
-
     return buildNode(app.name);
   };
 
-  // JSON — enriched nested tree
   const exportAppJSON = (app) => {
     const tree = buildTree(app);
     exportFile(JSON.stringify(tree, null, 2), `${app.name}-topology.json`, 'application/json');
   };
 
-  // CSV — one row per unique root-to-leaf dependency path (topology view)
   const exportAppCSV = (app) => {
-    const adjacency = {};
+    const adj = {};
     app.edges.forEach(({ source, target }) => {
-      if (!adjacency[source]) adjacency[source] = [];
-      adjacency[source].push(target);
+      if (!adj[source]) adj[source] = [];
+      adj[source].push(target);
     });
-
     const allPaths = [];
-    const dfs = (node, currentPath, visited) => {
-      const path = [...currentPath, node];
-      const children = (adjacency[node] || [])
-        .filter(c => !visited.has(c))
-        .sort((a, b) => a.localeCompare(b));
-      if (children.length === 0) {
-        allPaths.push(path);
-      } else {
-        const next = new Set(visited).add(node);
-        children.forEach(child => dfs(child, path, next));
-      }
+    const dfs = (node, path, visited) => {
+      const full = [...path, node];
+      const children = (adj[node] || []).filter(c => !visited.has(c)).sort((a, b) => a.localeCompare(b));
+      if (!children.length) { allPaths.push(full); return; }
+      const next = new Set(visited).add(node);
+      children.forEach(c => dfs(c, full, next));
     };
     dfs(app.name, [], new Set());
-    if (allPaths.length === 0) allPaths.push([app.name]);
-
+    if (!allPaths.length) allPaths.push([app.name]);
     const maxDepth = Math.max(...allPaths.map(p => p.length));
     const header = Array.from({ length: maxDepth }, (_, i) => `Level ${i + 1}`).join(',');
-    const rows = allPaths.map(path =>
-      [...path, ...Array(maxDepth - path.length).fill('')].map(csvCell).join(',')
+    const rows   = allPaths.map(p =>
+      [...p, ...Array(maxDepth - p.length).fill('')].map(csvCell).join(',')
     );
-
     exportFile([header, ...rows].join('\n'), `${app.name}-topology.csv`, 'text/csv');
   };
 
-  // XML — enriched nested hierarchy with entity metadata as attributes
   const exportAppXML = (app) => {
     const indent = n => '  '.repeat(n);
-
     const renderNode = (node, depth) => {
       const attrs = [
         `name="${esc(node.name)}"`,
-        node.entityId     ? `entityId="${esc(node.entityId)}"` : null,
-        node.serviceType  ? `serviceType="${esc(node.serviceType)}"` : null,
-        node.technology   ? `technology="${esc(node.technology)}"` : null,
-        node.managementZones?.length
-          ? `managementZones="${esc(node.managementZones.join(', '))}"` : null,
-        node.firstSeen    ? `firstSeen="${node.firstSeen}"` : null,
-        node.lastSeen     ? `lastSeen="${node.lastSeen}"` : null,
+        node.entityId    ? `entityId="${esc(node.entityId)}"` : null,
+        node.serviceType ? `serviceType="${esc(node.serviceType)}"` : null,
+        node.technology  ? `technology="${esc(node.technology)}"` : null,
+        node.managementZones?.length ? `managementZones="${esc(node.managementZones.join(', '))}"` : null,
+        node.firstSeen   ? `firstSeen="${node.firstSeen}"` : null,
+        node.lastSeen    ? `lastSeen="${node.lastSeen}"` : null,
+        node.problemSeverity ? `problemSeverity="${node.problemSeverity}"` : null,
       ].filter(Boolean).join(' ');
-
       if (!node.calls?.length) return `${indent(depth)}<service ${attrs} />`;
       return [
         `${indent(depth)}<service ${attrs}>`,
         `${indent(depth + 1)}<calls>`,
-        ...node.calls.map(child => renderNode(child, depth + 2)),
+        ...node.calls.map(c => renderNode(c, depth + 2)),
         `${indent(depth + 1)}</calls>`,
         `${indent(depth)}</service>`,
       ].join('\n');
     };
-
     const tree = buildTree(app);
-    const xml = [
+    const xml  = [
       '<?xml version="1.0" encoding="UTF-8"?>',
       `<application name="${esc(app.name)}" services="${app.serviceCount}" dependencies="${app.edges.length}">`,
       renderNode(tree, 1),
       '</application>',
     ].join('\n');
-
     exportFile(xml, `${app.name}-topology.xml`, 'application/xml');
   };
 
-  /**
-   * CMDB CSV — flat ServiceNow-compatible inventory.
-   * One row per service with all entity metadata + direct relationships.
-   * Column names match common ServiceNow cmdb_ci_service field patterns.
-   */
-  const exportAppCMDB = (app) => {
-    const header = [
-      'Name', 'Entity ID', 'Service Type', 'Technology',
-      'Management Zones', 'Tags', 'First Seen', 'Last Seen',
-      'Application Root', 'Calls (Direct Dependencies)', 'Called By',
-    ].map(csvCell).join(',');
+  // CMDB CSV — flat ServiceNow-compatible, includes PG + host data
+  const CMDB_HEADER = [
+    'Name', 'Entity ID', 'Entity Type', 'Service Type', 'Technology',
+    'Management Zones', 'Tags', 'First Seen', 'Last Seen',
+    'Application Root', 'Application Entity ID',
+    'Calls (Direct Dependencies)', 'Called By',
+    'Process Group', 'Process Group ID', 'PG Technology', 'PG Version',
+    'Host', 'Host ID', 'OS Type', 'OS Version', 'IP Addresses', 'Cloud Type',
+    'Problem Severity',
+  ].map(csvCell).join(',');
 
-    // Build reverse lookup: what calls each service?
+  function buildCMDBRows(app, csvCellFn) {
     const calledBy = {};
     app.edges.forEach(({ source, target }) => {
       if (!calledBy[target]) calledBy[target] = [];
       calledBy[target].push(source);
     });
 
-    const rows = [...app.services].sort((a, b) => a.localeCompare(b)).map(svc => {
-      const d = entityDetails[svc] || {};
-      const calls = app.edges.filter(e => e.source === svc).map(e => e.target).join('; ');
-      const callers = (calledBy[svc] || []).join('; ');
-      return [
-        svc,
-        d.entityId || '',
-        d.serviceType || '',
-        d.technology || '',
-        (d.managementZones || []).join('; '),
-        (d.tags || []).join('; '),
-        d.firstSeen || '',
-        d.lastSeen || '',
-        app.name,
-        calls,
-        callers,
-      ].map(csvCell).join(',');
-    });
+    return [...app.services].sort((a, b) => a.localeCompare(b)).map(svc => {
+      const d   = entityDetails[svc] || {};
+      const eid = d.entityId || '';
 
-    exportFile([header, ...rows].join('\n'), `${app.name}-cmdb.csv`, 'text/csv');
+      // Find PGs hosting this service
+      const pgEdges = allEdges.filter(e =>
+        e.edgeType === 'RUNS_ON' && e.source === svc
+      );
+      const pgDetails = pgEdges.map(e => entityDetails[e.target]).filter(Boolean);
+      const pgNames   = pgDetails.map(p => p.displayName).join('; ');
+      const pgIds     = pgDetails.map(p => p.entityId).join('; ');
+      const pgTechs   = pgDetails.map(p => p.pgTechnologies || '').join('; ');
+      const pgVers    = pgDetails.map(p => p.version || '').join('; ');
+
+      // Find hosts these PGs run on
+      const hostDetails = pgEdges.flatMap(pgEdge => {
+        const hostEdges = allEdges.filter(e =>
+          e.edgeType === 'HOSTED_ON' && e.source === pgEdge.target
+        );
+        return hostEdges.map(e => entityDetails[e.target]).filter(Boolean);
+      });
+      const hostNames = hostDetails.map(h => h.displayName).join('; ');
+      const hostIds   = hostDetails.map(h => h.entityId).join('; ');
+      const osList    = hostDetails.map(h => h.osType    || '').join('; ');
+      const osVerList = hostDetails.map(h => h.osVersion || '').join('; ');
+      const ipList    = hostDetails.map(h => h.ipAddresses || '').join('; ');
+      const cloudList = hostDetails.map(h => h.cloudType || '').join('; ');
+
+      const calls    = app.edges.filter(e => e.source === svc).map(e => e.target).join('; ');
+      const callers  = (calledBy[svc] || []).join('; ');
+      const severity = eid ? (problems[eid] || '') : '';
+
+      return [
+        svc, eid, 'SERVICE',
+        d.serviceType || '', d.technology || '',
+        (d.managementZones || []).join('; '), (d.tags || []).join('; '),
+        d.firstSeen || '', d.lastSeen || '',
+        app.name, app.entityId || '',
+        calls, callers,
+        pgNames, pgIds, pgTechs, pgVers,
+        hostNames, hostIds, osList, osVerList, ipList, cloudList,
+        severity,
+      ].map(csvCellFn).join(',');
+    });
+  }
+
+  const exportAppCMDB = (app) => {
+    const rows = buildCMDBRows(app, csvCell);
+    exportFile([CMDB_HEADER, ...rows].join('\n'), `${app.name}-cmdb.csv`, 'text/csv');
   };
 
-  // Export all apps
   const exportAllJSON = () => {
-    const allTrees = applications.map(app => buildTree(app));
-    exportFile(JSON.stringify(allTrees, null, 2), 'all-applications-topology.json', 'application/json');
+    exportFile(JSON.stringify(applications.map(buildTree), null, 2),
+      'all-applications-topology.json', 'application/json');
   };
 
   const exportAllCMDB = () => {
-    const header = [
-      'Name', 'Entity ID', 'Service Type', 'Technology',
-      'Management Zones', 'Tags', 'First Seen', 'Last Seen',
-      'Application Root', 'Calls (Direct Dependencies)', 'Called By',
-    ].map(csvCell).join(',');
-
-    const rows = [];
-    applications.forEach(app => {
-      const calledBy = {};
-      app.edges.forEach(({ source, target }) => {
-        if (!calledBy[target]) calledBy[target] = [];
-        calledBy[target].push(source);
-      });
-      [...app.services].sort((a, b) => a.localeCompare(b)).forEach(svc => {
-        const d = entityDetails[svc] || {};
-        const calls = app.edges.filter(e => e.source === svc).map(e => e.target).join('; ');
-        const callers = (calledBy[svc] || []).join('; ');
-        rows.push([
-          svc, d.entityId || '', d.serviceType || '', d.technology || '',
-          (d.managementZones || []).join('; '), (d.tags || []).join('; '),
-          d.firstSeen || '', d.lastSeen || '',
-          app.name, calls, callers,
-        ].map(csvCell).join(','));
-      });
-    });
-
-    exportFile([header, ...rows].join('\n'), 'all-services-cmdb.csv', 'text/csv');
+    const rows = applications.flatMap(app => buildCMDBRows(app, csvCell));
+    exportFile([CMDB_HEADER, ...rows].join('\n'), 'all-services-cmdb.csv', 'text/csv');
   };
+
+  // ── Table columns ──────────────────────────────────────────────────────────
 
   const tableColumns = [
     { id: 'source', header: 'Source Service', accessor: 'source' },
-    { id: 'target', header: 'Calls', accessor: 'target' },
+    { id: 'target', header: 'Calls',          accessor: 'target' },
+    { id: 'edgeType', header: 'Relationship', accessor: 'edgeType' },
   ];
 
   const appVersion = getAppVersion();
+
+  // ── Loading skeleton ───────────────────────────────────────────────────────
 
   if (loading) {
     return (
@@ -369,11 +451,6 @@ function AppContent() {
                     <Skeleton style={{ height: 32, width: 220, borderRadius: 6 }} />
                   </Flex>
                   <Skeleton style={{ height: h, borderRadius: 8 }} />
-                  <Flex gap={6} flexWrap="wrap">
-                    {Array.from({ length: 6 }).map((_, j) => (
-                      <Skeleton key={j} style={{ height: 24, width: 80 + (j % 3) * 24, borderRadius: 12 }} />
-                    ))}
-                  </Flex>
                 </Flex>
               </Surface>
             ))}
@@ -383,14 +460,24 @@ function AppContent() {
     );
   }
 
+  // ── Main render ────────────────────────────────────────────────────────────
+
+  const totalProblems = Object.keys(problems).length;
+
   return (
     <Page>
       <Page.Header>
         <TitleBar>
           <TitleBar.Title>Entity Explorer</TitleBar.Title>
           <TitleBar.Subtitle>
-            {applications.length > 0
-              ? `${applications.length} application${applications.length !== 1 ? 's' : ''} · ${totalServices} service${totalServices !== 1 ? 's' : ''} · ${edges.length} dependenc${edges.length !== 1 ? 'ies' : 'y'}`
+            {filteredApplications.length > 0
+              ? [
+                  counts.applications > 0 && `${counts.applications} DT app${counts.applications !== 1 ? 's' : ''}`,
+                  counts.services     > 0 && `${counts.services} service${counts.services !== 1 ? 's' : ''}`,
+                  counts.processGroups > 0 && `${counts.processGroups} process group${counts.processGroups !== 1 ? 's' : ''}`,
+                  counts.hosts        > 0 && `${counts.hosts} host${counts.hosts !== 1 ? 's' : ''}`,
+                  totalProblems       > 0 && `${totalProblems} open problem${totalProblems !== 1 ? 's' : ''}`,
+                ].filter(Boolean).join(' · ')
               : `Visualize service dependencies and export to any CMDB${appVersion ? ` · v${appVersion}` : ''}`}
           </TitleBar.Subtitle>
           <TitleBar.Suffix>
@@ -421,7 +508,7 @@ function AppContent() {
               {applications.length > 0 && (
                 <>
                   <Button variant="default" onClick={exportAllCMDB}>Export All (CMDB)</Button>
-                  <Button variant="accent" onClick={exportAllJSON}>Export All (JSON)</Button>
+                  <Button variant="accent"  onClick={exportAllJSON}>Export All (JSON)</Button>
                 </>
               )}
             </Flex>
@@ -431,6 +518,8 @@ function AppContent() {
 
       <Page.Main>
         <Flex flexDirection="column" gap={16} style={{ padding: 16 }}>
+
+          {/* Error banner */}
           {error && (
             <Flex alignItems="center" gap={10} role="alert" style={{
               padding: '10px 14px', borderRadius: 8,
@@ -445,20 +534,70 @@ function AppContent() {
           )}
 
           <Tabs>
-            <Tab title={`Applications (${applications.length})`}>
-              <ApplicationMap
-                applications={applications}
-                entityDetails={entityDetails}
-                onExportJSON={exportAppJSON}
-                onExportCSV={exportAppCSV}
-                onExportXML={exportAppXML}
-                onExportCMDB={exportAppCMDB}
-              />
+            <Tab title={`Applications (${filteredApplications.length})`}>
+              <Flex flexDirection="column" gap={16}>
+
+                {/* Management zone filter */}
+                {allMZs.length > 0 && (
+                  <Flex alignItems="center" gap={8} flexWrap="wrap" style={{ paddingTop: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--dt-colors-text-secondary-default)',
+                                   letterSpacing: '0.05em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+                      Management Zone
+                    </span>
+                    {allMZs.map(mz => {
+                      const active = selectedMZs.includes(mz);
+                      return (
+                        <button
+                          key={mz}
+                          onClick={() => toggleMZ(mz)}
+                          style={{
+                            padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 500,
+                            cursor: 'pointer', border: 'none', transition: 'all 0.15s',
+                            background: active
+                              ? 'var(--dt-colors-background-primary-default)'
+                              : 'var(--dt-colors-background-container-neutral-default)',
+                            color: active
+                              ? 'var(--dt-colors-text-primary-reversed-default)'
+                              : 'var(--dt-colors-text-neutral-default)',
+                            outline: active ? 'none' : '1px solid var(--dt-colors-border-neutral-default)',
+                          }}
+                        >
+                          {mz}
+                        </button>
+                      );
+                    })}
+                    {selectedMZs.length > 0 && (
+                      <button
+                        onClick={() => setSelectedMZs([])}
+                        style={{
+                          padding: '4px 10px', borderRadius: 20, fontSize: 11, cursor: 'pointer',
+                          border: 'none', background: 'transparent',
+                          color: 'var(--dt-colors-text-secondary-default)',
+                          textDecoration: 'underline',
+                        }}
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </Flex>
+                )}
+
+                <ApplicationMap
+                  applications={filteredApplications}
+                  entityDetails={entityDetails}
+                  allEdges={allEdges}
+                  problems={problems}
+                  onExportJSON={exportAppJSON}
+                  onExportCSV={exportAppCSV}
+                  onExportXML={exportAppXML}
+                  onExportCMDB={exportAppCMDB}
+                />
+              </Flex>
             </Tab>
 
-            <Tab title={`All Edges (${edges.length})`}>
-              {edges.length > 0 ? (
-                <DataTable data={edges} columns={tableColumns} sortable fullWidth />
+            <Tab title={`All Edges (${allEdges.length})`}>
+              {allEdges.length > 0 ? (
+                <DataTable data={allEdges} columns={tableColumns} sortable fullWidth />
               ) : (
                 <Flex justifyContent="center" style={{ padding: 48 }}>
                   <Paragraph>No dependency data available.</Paragraph>

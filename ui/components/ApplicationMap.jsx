@@ -346,9 +346,6 @@ function FlowGraph({ app, entityDetails, allEdges, problems }) {
     }
 
     // Process group nodes + edges from services
-    const appServiceIds = new Set(
-      app.services.map(s => entityDetails[s]?.entityId).filter(Boolean)
-    );
     const appPgIds = new Set();
     for (const edge of allEdges) {
       if (edge.edgeType !== 'RUNS_ON') continue;

@@ -120,6 +120,7 @@ function detectApplications(serviceEdges, allServiceNames, dtApplications, entit
         isDtApp:      true,
         serviceCount: appVisited.size,
         services:     [...appVisited],
+        entryServices,
         edges:        appEdges,
         appDetail:    entityDetail,
         managementZones: dtApp.managementZones || [],
@@ -147,12 +148,7 @@ function detectApplications(serviceEdges, allServiceNames, dtApplications, entit
       services:     [...visited],
       edges:        reachableEdges,
       appDetail:    null,
-      managementZones: [...visited].flatMap(svc => {
-        const svcId = Object.values(entityDetails).find(
-          d => d.entityType === 'SERVICE' && d.displayName === svc
-        )?.entityId;
-        return svcId ? (entityDetails[svcId]?.managementZones || []) : [];
-      }),
+      managementZones: [...visited].flatMap(svc => (entityDetails[svc]?.managementZones || [])),
     });
   }
 
@@ -277,6 +273,13 @@ function AppContent() {
       (adj[name] || []).forEach(child => node.calls.push(buildNode(child, next)));
       return node;
     };
+    if (app.isDtApp && Array.isArray(app.entryServices) && app.entryServices.length) {
+      return {
+        name: app.name,
+        entityId: app.entityId || null,
+        calls: app.entryServices.map(svc => buildNode(svc, new Set())),
+      };
+    }
     return buildNode(app.name);
   };
 
@@ -299,7 +302,8 @@ function AppContent() {
       const next = new Set(visited).add(node);
       children.forEach(c => dfs(c, full, next));
     };
-    dfs(app.name, [], new Set());
+    const roots = app.isDtApp && app.entryServices?.length ? app.entryServices : [app.name];
+    roots.forEach(root => dfs(root, app.isDtApp ? [app.name] : [], new Set(app.isDtApp ? [app.name] : [])));
     if (!allPaths.length) allPaths.push([app.name]);
     const maxDepth = Math.max(...allPaths.map(p => p.length));
     const header = Array.from({ length: maxDepth }, (_, i) => `Level ${i + 1}`).join(',');

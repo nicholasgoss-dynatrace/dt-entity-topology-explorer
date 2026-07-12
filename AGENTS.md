@@ -16,6 +16,24 @@ This repository contains a **Dynatrace App** built with the Dynatrace App Toolki
 
 The app auto-discovers "Applications" from live Dynatrace topology data: a root service (nothing upstream calls it) plus its full transitive dependency tree. It renders each application as an interactive Cytoscape.js graph and supports hierarchical CMDB export (JSON, CSV, XML).
 
+## Entities API v2 — Known Constraints
+
+The `getEntities` `fields` parameter does **not** support dotted sub-field notation. These patterns all cause a **"Constraints violated"** API error:
+
+```
+// ❌ WRONG — dotted sub-fields are rejected
+fields: 'properties.serviceType,properties.technologyNames'
+fields: 'fromRelationships.calls,toRelationships.runsOn'
+```
+
+Always request the top-level field and access keys in code:
+
+```
+// ✅ CORRECT
+fields: 'properties,fromRelationships,toRelationships'
+// Then in code: entity.properties?.['serviceType'], entity.fromRelationships?.['calls']
+```
+
 ## Core Concepts
 ### Dynatrace Apps
 - UI is **JavaScript/React** using **Strato Design System** components for consistent Dynatrace UX.

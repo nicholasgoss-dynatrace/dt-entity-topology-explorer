@@ -10,6 +10,7 @@ import { Heading } from '@dynatrace/strato-components/typography';
 import { Paragraph } from '@dynatrace/strato-components/typography';
 import { DataTable } from '@dynatrace/strato-components/tables';
 import { Skeleton } from '@dynatrace/strato-components/content';
+import { TimeframeSelector } from '@dynatrace/strato-components/filters';
 import { CriticalIcon } from '@dynatrace/strato-icons';
 import { getAppVersion } from '@dynatrace-sdk/app-environment';
 import ApplicationMap from './components/ApplicationMap';
@@ -89,14 +90,6 @@ function detectApplications(edges, allServiceNames = []) {
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
-const TIMEFRAME_OPTIONS = [
-  { label: 'Last 2 hours',  value: 'now-2h'  },
-  { label: 'Last 6 hours',  value: 'now-6h'  },
-  { label: 'Last 24 hours', value: 'now-24h' },
-  { label: 'Last 3 days',   value: 'now-3d'  },
-  { label: 'Last 7 days',   value: 'now-7d'  },
-  { label: 'Last 30 days',  value: 'now-30d' },
-];
 
 function AppContent() {
   const [edges, setEdges] = useState([]);
@@ -105,11 +98,11 @@ function AppContent() {
   const [totalServices, setTotalServices] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [timeframe, setTimeframe] = useState('now-2h');
+  const [timeframe, setTimeframe] = useState({ from: 'now-2h', to: 'now' });
 
-  useEffect(() => { loadTopology(timeframe); }, []);
+  useEffect(() => { loadTopology('now-2h', 'now'); }, []);
 
-  const loadTopology = async (from = timeframe) => {
+  const loadTopology = async (from = 'now-2h', to = 'now') => {
     try {
       setLoading(true);
       setError(null);
@@ -118,7 +111,7 @@ function AppContent() {
         method: 'POST',
         credentials: 'include',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ from }),
+        body: JSON.stringify({ from, to }),
       });
 
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
@@ -402,41 +395,29 @@ function AppContent() {
           </TitleBar.Subtitle>
           <TitleBar.Suffix>
             <Flex gap={8} alignItems="center">
-              {/* Timeframe picker */}
-              <Flex gap={0} alignItems="center" style={{
-                border: '1px solid var(--dt-colors-border-neutral-default)',
-                borderRadius: 6, overflow: 'hidden',
-              }}>
-                {TIMEFRAME_OPTIONS.map((opt, idx) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => {
-                      setTimeframe(opt.value);
-                      loadTopology(opt.value);
-                    }}
-                    style={{
-                      padding: '5px 10px',
-                      fontSize: 12,
-                      fontWeight: timeframe === opt.value ? 600 : 400,
-                      border: 'none',
-                      borderRight: idx < TIMEFRAME_OPTIONS.length - 1
-                        ? '1px solid var(--dt-colors-border-neutral-default)'
-                        : 'none',
-                      cursor: 'pointer',
-                      background: timeframe === opt.value
-                        ? 'var(--dt-colors-background-primary-default)'
-                        : 'var(--dt-colors-background-container-default)',
-                      color: timeframe === opt.value
-                        ? 'var(--dt-colors-text-primary-reversed-default)'
-                        : 'var(--dt-colors-text-neutral-default)',
-                      transition: 'background 0.15s, color 0.15s',
-                    }}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </Flex>
-              <Button variant="default" onClick={() => loadTopology(timeframe)}>Refresh</Button>
+              <TimeframeSelector
+                value={timeframe}
+                onChange={(tf) => {
+                  if (!tf) return;
+                  setTimeframe(tf);
+                  loadTopology(tf.from.value, tf.to.value);
+                }}
+              >
+                <TimeframeSelector.Presets>
+                  <TimeframeSelector.PresetItem value={{ from: 'now-30m', to: 'now' }}>Last 30 minutes</TimeframeSelector.PresetItem>
+                  <TimeframeSelector.PresetItem value={{ from: 'now-2h',  to: 'now' }}>Last 2 hours</TimeframeSelector.PresetItem>
+                  <TimeframeSelector.PresetItem value={{ from: 'now-6h',  to: 'now' }}>Last 6 hours</TimeframeSelector.PresetItem>
+                  <TimeframeSelector.PresetItem value={{ from: 'now-1d',  to: 'now' }}>Last 24 hours</TimeframeSelector.PresetItem>
+                  <TimeframeSelector.PresetItem value={{ from: 'now-3d',  to: 'now' }}>Last 3 days</TimeframeSelector.PresetItem>
+                  <TimeframeSelector.PresetItem value={{ from: 'now-7d',  to: 'now' }}>Last 7 days</TimeframeSelector.PresetItem>
+                  <TimeframeSelector.PresetItem value={{ from: 'now-1mo', to: 'now' }}>Last month</TimeframeSelector.PresetItem>
+                </TimeframeSelector.Presets>
+              </TimeframeSelector>
+              <Button variant="default" onClick={() => {
+                const from = timeframe?.from?.value ?? 'now-2h';
+                const to   = timeframe?.to?.value   ?? 'now';
+                loadTopology(from, to);
+              }}>Refresh</Button>
               {applications.length > 0 && (
                 <>
                   <Button variant="default" onClick={exportAllCMDB}>Export All (CMDB)</Button>

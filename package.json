@@ -19,6 +19,7 @@
     "@dynatrace/strato-components": "^3.5.0",
     "@dynatrace/strato-design-tokens": "^1.5.0",
     "@dynatrace/strato-icons": "^2.3.0",
+    "@xyflow/react": "^12.11.2",
     "cytoscape": "^3.34.0",
     "cytoscape-dagre": "^3.0.0",
     "dagre": "^0.8.5",

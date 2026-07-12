@@ -10,28 +10,47 @@ interface EntityRelationship {
   id: string;
 }
 
+interface EntityDetail {
+  entityId: string;
+  serviceType: string | null;
+  technology: string | null;
+  managementZones: string[];
+  tags: string[];
+  firstSeen: string | null;
+  lastSeen: string | null;
+}
+
 interface EntityWithRelationships {
   entityId: string;
   displayName: string;
+  firstSeenTms?: number;
+  lastSeenTms?: number;
+  tags?: Array<{ context?: string; key?: string; value?: string; stringRepresentation?: string }>;
+  managementZones?: Array<{ id?: string; name?: string }>;
+  properties?: Record<string, unknown>;
   fromRelationships?: {
     calls?: EntityRelationship[];
   };
 }
 
+function fmtDate(tms: number | undefined): string | null {
+  if (!tms) return null;
+  return new Date(tms).toISOString().split('T')[0];
+}
+
 /**
- * App Function: fetches ALL SERVICE entities across all pages, with their "calls"
- * relationships. Returns both the edge list and the full set of service names so the
- * frontend can surface isolated services that have no relationships.
+ * App Function: fetches ALL SERVICE entities across every page, with their
+ * "calls" relationships plus metadata fields used for CMDB export and card display.
  */
 export default async function queryTopology(): Promise<object> {
   try {
     const client = new MonitoredEntitiesClient(httpClient);
     const allEntities: EntityWithRelationships[] = [];
 
-    // First page
+    // First page — request relationship + metadata fields in one call
     const firstResponse = await client.getEntities({
       entitySelector: 'type("SERVICE")',
-      fields: 'fromRelationships.calls',
+      fields: 'fromRelationships.calls,tags,managementZones,properties.serviceType,properties.technologyNames,firstSeenTms,lastSeenTms',
       pageSize: 500,
     });
 
@@ -47,29 +66,47 @@ export default async function queryTopology(): Promise<object> {
       nextPageKey = page.nextPageKey;
     }
 
-    // Build entityId → displayName lookup
+    // entityId → displayName lookup for edge resolution
     const nameMap: Record<string, string> = {};
     allEntities.forEach(e => { nameMap[e.entityId] = e.displayName; });
 
-    // Flatten to source→target edges using display names
+    // Flatten to source → target edges
     const edges: EdgeResult[] = [];
     allEntities.forEach(entity => {
       const calls = entity.fromRelationships?.calls || [];
       calls.forEach(rel => {
         const targetName = nameMap[rel.id];
-        if (targetName) {
-          edges.push({ source: entity.displayName, target: targetName });
-        }
+        if (targetName) edges.push({ source: entity.displayName, target: targetName });
       });
     });
 
-    // Return all service names so the frontend can detect isolated services
+    // Build per-service detail map for card rendering and CMDB export
+    const entityDetails: Record<string, EntityDetail> = {};
+    allEntities.forEach(entity => {
+      const props = entity.properties || {};
+      const techNames = (props['technologyNames'] as string[]) || [];
+      const serviceType = (props['serviceType'] as string) || null;
+
+      entityDetails[entity.displayName] = {
+        entityId: entity.entityId,
+        serviceType,
+        technology: techNames.length ? techNames.join(', ') : null,
+        managementZones: (entity.managementZones || []).map(mz => mz.name || '').filter(Boolean),
+        tags: (entity.tags || [])
+          .map(t => t.stringRepresentation || (t.key ? `${t.key}${t.value ? ':' + t.value : ''}` : ''))
+          .filter(Boolean),
+        firstSeen: fmtDate(entity.firstSeenTms),
+        lastSeen: fmtDate(entity.lastSeenTms),
+      };
+    });
+
     const allServiceNames = Object.values(nameMap);
 
     return {
       success: true,
       edges,
       allServiceNames,
+      entityDetails,
       count: edges.length,
       totalServices: allEntities.length,
     };
@@ -80,6 +117,7 @@ export default async function queryTopology(): Promise<object> {
       error: error instanceof Error ? error.message : 'Unknown error',
       edges: [],
       allServiceNames: [],
+      entityDetails: {},
       count: 0,
       totalServices: 0,
     };

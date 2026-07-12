@@ -10,32 +10,32 @@ import { Heading } from '@dynatrace/strato-components/typography';
 import { Paragraph } from '@dynatrace/strato-components/typography';
 import { AnalyticsIcon } from '@dynatrace/strato-icons';
 
-// Dynatrace brand palette
+// ── Dynatrace brand palette ────────────────────────────────────────────────────
+
 const DT = {
   BLUE:    '#1C5BE5',
   INDIGO:  '#4635D6',
   SKY:     '#1497FF',
   CYAN:    '#54C8E9',
   PURPLE:  '#B23BE4',
-  LIME:    '#73BE28',  // using GREEN for db — LIME is too yellow on white
+  LIME:    '#73BE28',
   GREEN:   '#73BE28',
   MAGENTA: '#E436FF',
 };
 
-// Light canvas — matches DT's own topology/flow diagrams
-const CANVAS_BG   = '#f0f4f8';
-const CARD_BG     = '#ffffff';
-const EDGE_COLOR  = DT.BLUE;
-const LABEL_COLOR = '#1c2028';
+const CANVAS_BG  = '#f0f4f8';
+const CARD_BG    = '#ffffff';
+const EDGE_COLOR = DT.BLUE;
 
-// Node card dimensions
-const NODE_W      = 160;
-const NODE_H      = 64;
-const ROOT_W      = 180;
-const ROOT_H      = 72;
-const HEADER_H    = 22;  // colored strip at top of each card
+// Card dimensions — must match SVG viewBox exactly for correct scaling
+const NODE_W  = 220;
+const NODE_H  = 110;
+const ROOT_W  = 240;
+const ROOT_H  = 120;
+const HDR_H   = 30;   // colored header strip height
 
-// Map service name patterns → DT brand accent color
+// ── Service type → accent color ────────────────────────────────────────────────
+
 function detectAccent(name, isRoot) {
   if (isRoot) return DT.BLUE;
   const n = name.toLowerCase();
@@ -56,46 +56,116 @@ function detectAccent(name, isRoot) {
   return DT.GREEN;
 }
 
-// Keep detectIconAndColor for the service chip list below the graph
+// Keep for service chips
 function detectIconAndColor(name, isRoot) {
-  const accent = detectAccent(name, isRoot);
-  return { accent };
+  return { accent: detectAccent(name, isRoot) };
 }
 
+// ── Service type label formatting ──────────────────────────────────────────────
+
+const SERVICE_TYPE_LABELS = {
+  WEB_REQUEST:                    'Web Request',
+  DATABASE:                       'Database',
+  MESSAGING_SERVICE:              'Messaging',
+  CUSTOM_SERVICE:                 'Custom Service',
+  ENTERPRISE_SERVICE_BUS:         'ESB',
+  OPAQUE_AND_MESSAGING_SERVICE:   'Messaging',
+  BACKGROUND:                     'Background',
+  INFERRED_SERVICE:               'Inferred',
+  REMOTE_SERVICE:                 'Remote Service',
+};
+
+function fmtServiceType(raw) {
+  if (!raw) return null;
+  return SERVICE_TYPE_LABELS[raw] || raw.replace(/_/g, ' ').toLowerCase();
+}
+
+// ── SVG card builder ───────────────────────────────────────────────────────────
+
+const xmlEsc = s => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const trunc  = (s, n) => { const str = String(s || ''); return str.length > n ? str.slice(0, n - 1) + '…' : str; };
+
 /**
- * Generates an SVG data URI for the card background:
- *  - Colored header strip at the top
- *  - White body below
- * Root nodes get a solid colored background instead.
+ * Generates a data URI for a card background SVG.
+ *
+ * Non-root:  colored header strip (HDR_H px) + white body with 3 data rows
+ * Root:      solid accent background, white text throughout
  */
-function buildCardSvg(accent, isRoot, w, h) {
+function buildCardSvg(name, accent, isRoot, w, h, details = {}) {
+  const svcName   = xmlEsc(trunc(name, 26));
+  const typeLabel = xmlEsc(trunc(fmtServiceType(details.serviceType) || '—', 22));
+  const techLabel = xmlEsc(trunc(details.technology || '—', 22));
+  const zoneLabel = xmlEsc(trunc((details.managementZones || []).join(', ') || '—', 22));
+  const entityId  = xmlEsc(trunc(details.entityId || '—', 28));
+
+  // Row y-positions in the body section (below header)
+  const r1 = HDR_H + 20;   // Type row
+  const r2 = HDR_H + 36;   // Tech row
+  const r3 = HDR_H + 52;   // Zone row
+  const divY = h - 18;     // Divider above entity ID
+  const idY  = h - 6;      // Entity ID baseline
+
+  const LABEL_COL  = '#9ca3af';  // muted gray for field names
+  const VALUE_COL  = '#1f2937';  // near-black for values
+  const ID_COL     = '#b0b8c4';  // light for entity ID
+
+  // Small accent indicator bar on left of each row
+  const bar = (y) =>
+    `<rect x="11" y="${y - 9}" width="3" height="10" rx="1.5" fill="${accent}" opacity="0.55"/>`;
+
   let svg;
+
   if (isRoot) {
-    // Solid header color for the root/entry service
+    // Root node: full accent background, white text
+    const WHITE       = '#ffffff';
+    const WHITE_MUTED = 'rgba(255,255,255,0.65)';
     svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">
-      <rect width="${w}" height="${h}" rx="8" ry="8" fill="${accent}"/>
-    </svg>`;
+  <rect width="${w}" height="${h}" rx="8" ry="8" fill="${accent}"/>
+  <text x="11" y="21" font-family="system-ui,-apple-system,sans-serif" font-size="11" font-weight="700" fill="${WHITE}">${svcName}</text>
+  <text x="11" y="${r1}" font-family="system-ui,-apple-system,sans-serif" font-size="8.5" font-weight="600" fill="${WHITE_MUTED}">TYPE</text>
+  <text x="50" y="${r1}" font-family="system-ui,-apple-system,sans-serif" font-size="9" fill="${WHITE}">${typeLabel}</text>
+  <text x="11" y="${r2}" font-family="system-ui,-apple-system,sans-serif" font-size="8.5" font-weight="600" fill="${WHITE_MUTED}">TECH</text>
+  <text x="50" y="${r2}" font-family="system-ui,-apple-system,sans-serif" font-size="9" fill="${WHITE}">${techLabel}</text>
+  <text x="11" y="${r3}" font-family="system-ui,-apple-system,sans-serif" font-size="8.5" font-weight="600" fill="${WHITE_MUTED}">ZONE</text>
+  <text x="50" y="${r3}" font-family="system-ui,-apple-system,sans-serif" font-size="9" fill="${WHITE}">${zoneLabel}</text>
+  <line x1="11" y1="${divY}" x2="${w - 11}" y2="${divY}" stroke="rgba(255,255,255,0.25)" stroke-width="0.5"/>
+  <text x="11" y="${idY}" font-family="ui-monospace,monospace" font-size="8" fill="${WHITE_MUTED}">${entityId}</text>
+</svg>`;
   } else {
-    // Header strip + white body
+    // Standard card: colored header + white body
     svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">
-      <rect width="${w}" height="${h}" rx="8" ry="8" fill="${CARD_BG}"/>
-      <rect width="${w}" height="${HEADER_H}" rx="8" ry="8" fill="${accent}"/>
-      <rect y="${HEADER_H - 3}" width="${w}" height="3" fill="${accent}"/>
-    </svg>`;
+  <rect width="${w}" height="${h}" rx="8" ry="8" fill="${CARD_BG}"/>
+  <rect width="${w}" height="${HDR_H}" rx="8" ry="8" fill="${accent}"/>
+  <rect y="${HDR_H - 3}" width="${w}" height="3" fill="${accent}"/>
+  <text x="11" y="20" font-family="system-ui,-apple-system,sans-serif" font-size="10.5" font-weight="600" fill="white">${svcName}</text>
+  ${bar(r1)}
+  <text x="20" y="${r1}" font-family="system-ui,-apple-system,sans-serif" font-size="8.5" font-weight="600" fill="${LABEL_COL}">TYPE</text>
+  <text x="55" y="${r1}" font-family="system-ui,-apple-system,sans-serif" font-size="9" fill="${VALUE_COL}">${typeLabel}</text>
+  ${bar(r2)}
+  <text x="20" y="${r2}" font-family="system-ui,-apple-system,sans-serif" font-size="8.5" font-weight="600" fill="${LABEL_COL}">TECH</text>
+  <text x="55" y="${r2}" font-family="system-ui,-apple-system,sans-serif" font-size="9" fill="${VALUE_COL}">${techLabel}</text>
+  ${bar(r3)}
+  <text x="20" y="${r3}" font-family="system-ui,-apple-system,sans-serif" font-size="8.5" font-weight="600" fill="${LABEL_COL}">ZONE</text>
+  <text x="55" y="${r3}" font-family="system-ui,-apple-system,sans-serif" font-size="9" fill="${VALUE_COL}">${zoneLabel}</text>
+  <line x1="11" y1="${divY}" x2="${w - 11}" y2="${divY}" stroke="#e5e7eb" stroke-width="0.5"/>
+  <text x="11" y="${idY}" font-family="ui-monospace,monospace" font-size="8" fill="${ID_COL}">${entityId}</text>
+</svg>`;
   }
+
   return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
-function buildCytoElements(app) {
+// ── Cytoscape element builder ──────────────────────────────────────────────────
+
+function buildCytoElements(app, entityDetails) {
   const nodes = app.services.map(svc => {
-    const isRoot = svc === app.name;
+    const isRoot  = svc === app.name;
     const accent  = detectAccent(svc, isRoot);
     const w       = isRoot ? ROOT_W : NODE_W;
     const h       = isRoot ? ROOT_H : NODE_H;
-    const cardSvg = buildCardSvg(accent, isRoot, w, h);
-    return {
-      data: { id: svc, label: svc, isRoot, accent, cardSvg, w, h },
-    };
+    const details = entityDetails[svc] || {};
+    const cardSvg = buildCardSvg(svc, accent, isRoot, w, h, details);
+    return { data: { id: svc, label: svc, isRoot, accent, cardSvg, w, h } };
   });
 
   const seen = new Set();
@@ -113,12 +183,13 @@ function buildCytoElements(app) {
   return [...nodes, ...edges];
 }
 
-function CytoscapeGraph({ app }) {
+// ── Cytoscape graph component ──────────────────────────────────────────────────
+
+function CytoscapeGraph({ app, entityDetails }) {
   const containerRef = useRef(null);
   const cyRef        = useRef(null);
 
-  // Rectangular nodes need more vertical space than circles did
-  const graphHeight = Math.max(420, Math.min(1400, app.serviceCount * 96));
+  const graphHeight = Math.max(440, Math.min(1600, app.serviceCount * 120));
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -126,57 +197,48 @@ function CytoscapeGraph({ app }) {
 
     cyRef.current = cytoscape({
       container: containerRef.current,
-      elements: buildCytoElements(app),
+      elements: buildCytoElements(app, entityDetails),
 
       style: [
-        // ── Base node: card with colored header strip ──────────────────────
+        // Base node — card SVG fills the node, label hidden (text is in the SVG)
         {
           selector: 'node',
           style: {
             'shape': 'roundrectangle',
             'width': NODE_W,
             'height': NODE_H,
-            // Card background image (header stripe + white body)
             'background-image': 'data(cardSvg)',
             'background-fit': 'cover',
             'background-clip': 'node',
             'background-color': CARD_BG,
-            // Border matches the accent color
             'border-color': 'data(accent)',
             'border-width': 1.5,
-            // Label centered — sits naturally in the white body below the header
-            'label': 'data(label)',
-            'color': LABEL_COLOR,
-            'text-valign': 'center',
-            'text-halign': 'center',
-            'font-size': '10px',
-            'font-family': 'system-ui, -apple-system, sans-serif',
-            'font-weight': '600',
-            'text-wrap': 'wrap',
-            'text-max-width': '144px',
+            'label': '',   // text rendered inside the SVG
+            'shadow-blur': 8,
+            'shadow-color': 'rgba(0,0,0,0.10)',
+            'shadow-offset-x': 0,
+            'shadow-offset-y': 2,
+            'shadow-opacity': 1,
           },
         },
-        // ── Root/entry node: solid brand color, white text ─────────────────
+        // Root/entry node overrides
         {
           selector: 'node[?isRoot]',
           style: {
             'width': ROOT_W,
             'height': ROOT_H,
             'border-width': 2,
-            'font-size': '11px',
-            'font-weight': '700',
-            'color': '#ffffff',
+            'shadow-blur': 14,
+            'shadow-color': 'rgba(28,91,229,0.25)',
+            'shadow-offset-y': 3,
           },
         },
-        // ── Hover highlight ────────────────────────────────────────────────
+        // Hover — brighten border
         {
           selector: 'node:active',
-          style: {
-            'border-width': 2.5,
-            'overlay-opacity': 0,
-          },
+          style: { 'overlay-opacity': 0 },
         },
-        // ── Edges: flowing bezier in DT blue ──────────────────────────────
+        // Edges — flowing DT blue bezier curves
         {
           selector: 'edge',
           style: {
@@ -185,11 +247,11 @@ function CytoscapeGraph({ app }) {
             'line-color': EDGE_COLOR,
             'target-arrow-color': EDGE_COLOR,
             'target-arrow-shape': 'triangle',
-            'arrow-scale': 0.9,
-            'opacity': 0.6,
+            'arrow-scale': 0.85,
+            'opacity': 0.55,
           },
         },
-        // ── Selected state ─────────────────────────────────────────────────
+        // Selected
         {
           selector: ':selected',
           style: {
@@ -203,8 +265,8 @@ function CytoscapeGraph({ app }) {
       layout: {
         name: 'dagre',
         rankDir: 'LR',
-        nodeSep: 44,   // vertical gap between nodes in the same rank column
-        rankSep: 200,  // horizontal gap between rank columns (wider for card nodes)
+        nodeSep: 44,    // vertical gap between cards in the same column
+        rankSep: 240,   // horizontal gap between rank columns
         edgeSep: 20,
         ranker: 'network-simplex',
         padding: 60,
@@ -213,12 +275,12 @@ function CytoscapeGraph({ app }) {
       },
 
       wheelSensitivity: 0.3,
-      minZoom: 0.08,
+      minZoom: 0.06,
       maxZoom: 4,
     });
 
     return () => { if (cyRef.current) { cyRef.current.destroy(); cyRef.current = null; } };
-  }, [app]);
+  }, [app, entityDetails]);
 
   return (
     <div style={{ position: 'relative' }}>
@@ -229,10 +291,11 @@ function CytoscapeGraph({ app }) {
           height: graphHeight,
           background: CANVAS_BG,
           borderRadius: 8,
-          // Subtle inner border to separate canvas from card background
           border: '1px solid var(--dt-colors-border-neutral-default)',
         }}
       />
+
+      {/* Zoom hint */}
       <div style={{
         position: 'absolute', bottom: 8, right: 12,
         fontSize: 11, color: '#8494a8',
@@ -240,21 +303,22 @@ function CytoscapeGraph({ app }) {
       }}>
         Scroll to zoom · Drag to pan
       </div>
+
       {/* Legend */}
-      <Flex gap={16} style={{ marginTop: 8 }}>
+      <Flex flexWrap="wrap" gap={12} style={{ marginTop: 8 }}>
         {[
-          { color: DT.BLUE,    label: 'Application root' },
-          { color: DT.SKY,     label: 'Frontend / web' },
-          { color: DT.INDIGO,  label: 'Proxy / gateway' },
-          { color: DT.CYAN,    label: 'API / gRPC' },
-          { color: DT.LIME,    label: 'Database / cache' },
-          { color: DT.PURPLE,  label: 'Queue / events' },
-          { color: DT.GREEN,   label: 'Service' },
+          { color: DT.BLUE,   label: 'App root' },
+          { color: DT.SKY,    label: 'Frontend / web' },
+          { color: DT.INDIGO, label: 'Proxy / gateway' },
+          { color: DT.CYAN,   label: 'API / gRPC' },
+          { color: DT.LIME,   label: 'Database' },
+          { color: DT.PURPLE, label: 'Queue / events' },
+          { color: DT.GREEN,  label: 'Service' },
         ].map(({ color, label }) => (
           <Flex key={label} alignItems="center" gap={5}>
             <span style={{
-              display: 'inline-block', width: 10, height: 10, borderRadius: 2,
-              background: color, flexShrink: 0,
+              display: 'inline-block', width: 10, height: 10,
+              borderRadius: 2, background: color, flexShrink: 0,
             }} />
             <span style={{ fontSize: 11, color: 'var(--dt-colors-text-secondary-default)' }}>
               {label}
@@ -266,7 +330,9 @@ function CytoscapeGraph({ app }) {
   );
 }
 
-function ApplicationCard({ app, onExportJSON, onExportCSV, onExportXML }) {
+// ── Application card ───────────────────────────────────────────────────────────
+
+function ApplicationCard({ app, entityDetails, onExportJSON, onExportCSV, onExportXML, onExportCMDB }) {
   return (
     <Surface elevation="raised">
       <Flex flexDirection="column" gap={16} style={{ padding: 20 }}>
@@ -280,15 +346,17 @@ function ApplicationCard({ app, onExportJSON, onExportCSV, onExportXML }) {
               {app.serviceCount} service{app.serviceCount !== 1 ? 's' : ''} · {app.edges.length} dependenc{app.edges.length !== 1 ? 'ies' : 'y'}
             </span>
           </Flex>
-          <Flex gap={8}>
-            <Button variant="default" onClick={() => onExportJSON(app)}>JSON</Button>
-            <Button variant="default" onClick={() => onExportCSV(app)}>CSV</Button>
+          <Flex gap={8} flexWrap="wrap">
+            <Button variant="default" onClick={() => onExportCMDB(app)}>CMDB CSV</Button>
             <Button variant="default" onClick={() => onExportXML(app)}>XML</Button>
+            <Button variant="default" onClick={() => onExportJSON(app)}>JSON</Button>
+            <Button variant="default" onClick={() => onExportCSV(app)}>Paths CSV</Button>
           </Flex>
         </Flex>
 
-        <CytoscapeGraph app={app} />
+        <CytoscapeGraph app={app} entityDetails={entityDetails} />
 
+        {/* Service chips — theme-aware tinted background */}
         <Flex flexWrap="wrap" gap={6}>
           {[...app.services].sort((a, b) => a.localeCompare(b)).map(svc => {
             const { accent } = detectIconAndColor(svc, svc === app.name);
@@ -309,7 +377,12 @@ function ApplicationCard({ app, onExportJSON, onExportCSV, onExportXML }) {
   );
 }
 
-export default function ApplicationMap({ applications, onExportJSON, onExportCSV, onExportXML }) {
+// ── Root export ────────────────────────────────────────────────────────────────
+
+export default function ApplicationMap({
+  applications, entityDetails,
+  onExportJSON, onExportCSV, onExportXML, onExportCMDB,
+}) {
   if (applications.length === 0) {
     return (
       <Surface elevation="raised" style={{ padding: 48 }}>
@@ -334,8 +407,11 @@ export default function ApplicationMap({ applications, onExportJSON, onExportCSV
   return (
     <Flex flexDirection="column" gap={24} style={{ paddingTop: 16 }}>
       {applications.map(app => (
-        <ApplicationCard key={app.name} app={app}
-          onExportJSON={onExportJSON} onExportCSV={onExportCSV} onExportXML={onExportXML} />
+        <ApplicationCard
+          key={app.name} app={app} entityDetails={entityDetails}
+          onExportJSON={onExportJSON} onExportCSV={onExportCSV}
+          onExportXML={onExportXML} onExportCMDB={onExportCMDB}
+        />
       ))}
     </Flex>
   );

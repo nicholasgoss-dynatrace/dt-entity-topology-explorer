@@ -8,6 +8,7 @@ import { Flex } from '@dynatrace/strato-components/layouts';
 import { Button } from '@dynatrace/strato-components/buttons';
 import { Heading } from '@dynatrace/strato-components/typography';
 import { Paragraph } from '@dynatrace/strato-components/typography';
+import { AnalyticsIcon } from '@dynatrace/strato-icons';
 
 // Dynatrace brand palette
 const DT = {
@@ -268,14 +269,17 @@ function CytoscapeGraph({ app }) {
 
 function ApplicationCard({ app, onExportJSON, onExportCSV, onExportXML }) {
   return (
-    <Surface>
+    <Surface elevation="raised">
       <Flex flexDirection="column" gap={16} style={{ padding: 20 }}>
         <Flex justifyContent="space-between" alignItems="flex-start" flexWrap="wrap" gap={8}>
           <Flex flexDirection="column" gap={4}>
-            <Heading level={3}>{app.name}</Heading>
-            <Paragraph style={{ color: 'var(--dt-colors-text-secondary-default)' }}>
+            <Heading level={3} style={{ fontSize: 16, fontWeight: 700 }}>{app.name}</Heading>
+            <span style={{
+              fontSize: 11, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase',
+              color: 'var(--dt-colors-text-secondary-default)',
+            }}>
               {app.serviceCount} service{app.serviceCount !== 1 ? 's' : ''} · {app.edges.length} dependenc{app.edges.length !== 1 ? 'ies' : 'y'}
-            </Paragraph>
+            </span>
           </Flex>
           <Flex gap={8}>
             <Button variant="default" onClick={() => onExportJSON(app)}>JSON</Button>
@@ -286,15 +290,16 @@ function ApplicationCard({ app, onExportJSON, onExportCSV, onExportXML }) {
 
         <CytoscapeGraph app={app} />
 
+        {/* Service chips — theme-aware: tinted bg, accent border, accent text */}
         <Flex flexWrap="wrap" gap={6}>
           {[...app.services].sort((a, b) => a.localeCompare(b)).map(svc => {
-            const { accent, bg } = detectIconAndColor(svc, svc === app.name);
+            const { accent } = detectIconAndColor(svc, svc === app.name);
             return (
               <span key={svc} style={{
-                padding: '3px 10px', borderRadius: 12, fontSize: 12,
-                background: bg,
-                color: '#ffffff',
-                border: `1px solid ${accent}`,
+                padding: '3px 10px', borderRadius: 12, fontSize: 12, fontWeight: 500,
+                background: `color-mix(in oklab, ${accent} 12%, var(--dt-colors-background-container-default))`,
+                color: accent,
+                border: `1px solid color-mix(in oklab, ${accent} 35%, transparent)`,
               }}>
                 {svc}
               </span>
@@ -309,9 +314,22 @@ function ApplicationCard({ app, onExportJSON, onExportCSV, onExportXML }) {
 export default function ApplicationMap({ applications, onExportJSON, onExportCSV, onExportXML }) {
   if (applications.length === 0) {
     return (
-      <Flex justifyContent="center" style={{ padding: 64 }}>
-        <Paragraph>No applications detected.</Paragraph>
-      </Flex>
+      <Surface elevation="raised" style={{ padding: 48 }}>
+        <Flex flexDirection="column" alignItems="center" gap={16}>
+          <Flex alignItems="center" justifyContent="center" style={{
+            width: 56, height: 56, borderRadius: '50%',
+            background: 'color-mix(in oklab, var(--dt-colors-background-primary-default) 12%, var(--dt-colors-background-container-default))',
+          }}>
+            <AnalyticsIcon size={24} style={{ color: 'var(--dt-colors-background-primary-default)' }} />
+          </Flex>
+          <Flex flexDirection="column" alignItems="center" gap={6}>
+            <Heading level={3} style={{ fontSize: 16, fontWeight: 600 }}>No applications detected</Heading>
+            <Paragraph style={{ color: 'var(--dt-colors-text-secondary-default)', fontSize: 13, textAlign: 'center', maxWidth: 380 }}>
+              No service call relationships were found in this environment. Ensure services are instrumented and actively receiving traffic.
+            </Paragraph>
+          </Flex>
+        </Flex>
+      </Surface>
     );
   }
 

@@ -1,18 +1,13 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
+import { AppRoot } from '@dynatrace/strato-components/core';
 import App from './App';
-// index.css omitted — Strato components supply all styling via design tokens
-
-// Initialize Dynatrace App
-if ((window as any).dtAppConfig) {
-  console.log('✅ Running as Dynatrace App');
-} else {
-  console.log('⚠️ Running in development mode (not in Dynatrace environment)');
-}
 
 const root = ReactDOM.createRoot(document.getElementById('root') as HTMLElement);
 root.render(
   <React.StrictMode>
-    <App />
+    <AppRoot>
+      <App />
+    </AppRoot>
   </React.StrictMode>
 );

@@ -9,7 +9,9 @@ import { Tabs, Tab } from '@dynatrace/strato-components/navigation';
 import { Heading } from '@dynatrace/strato-components/typography';
 import { Paragraph } from '@dynatrace/strato-components/typography';
 import { DataTable } from '@dynatrace/strato-components/tables';
-import { ProgressCircle } from '@dynatrace/strato-components/content';
+import { ProgressCircle, Skeleton } from '@dynatrace/strato-components/content';
+import { CriticalIcon } from '@dynatrace/strato-icons';
+import { getAppVersion } from '@dynatrace-sdk/app-environment';
 import ApplicationMap from './components/ApplicationMap';
 
 /**
@@ -268,6 +270,8 @@ function AppContent() {
     { id: 'target', header: 'Calls', accessor: 'target' },
   ];
 
+  const appVersion = getAppVersion();
+
   if (loading) {
     return (
       <Page>
@@ -278,11 +282,24 @@ function AppContent() {
           </TitleBar>
         </Page.Header>
         <Page.Main>
-          <Flex justifyContent="center" alignItems="center" style={{ padding: 80 }}>
-            <Flex flexDirection="column" alignItems="center" gap={16}>
-              <ProgressCircle aria-label="Discovering applications..." />
-              <Paragraph>Analyzing service topology and detecting applications...</Paragraph>
-            </Flex>
+          <Flex flexDirection="column" gap={16} style={{ padding: 16 }}>
+            {/* Skeleton cards matching the final application card layout */}
+            {[480, 320, 560].map((h, i) => (
+              <Surface key={i} style={{ padding: 20 }}>
+                <Flex flexDirection="column" gap={12}>
+                  <Flex justifyContent="space-between" alignItems="center">
+                    <Skeleton style={{ height: 22, width: 220, borderRadius: 4 }} />
+                    <Skeleton style={{ height: 32, width: 180, borderRadius: 6 }} />
+                  </Flex>
+                  <Skeleton style={{ height: h, borderRadius: 8 }} />
+                  <Flex gap={6} flexWrap="wrap">
+                    {Array.from({ length: 6 }).map((_, j) => (
+                      <Skeleton key={j} style={{ height: 24, width: 80 + (j % 3) * 24, borderRadius: 12 }} />
+                    ))}
+                  </Flex>
+                </Flex>
+              </Surface>
+            ))}
           </Flex>
         </Page.Main>
       </Page>
@@ -297,7 +314,7 @@ function AppContent() {
           <TitleBar.Subtitle>
             {applications.length > 0
               ? `${applications.length} application${applications.length !== 1 ? 's' : ''} · ${totalServices} service${totalServices !== 1 ? 's' : ''} · ${edges.length} dependenc${edges.length !== 1 ? 'ies' : 'y'}`
-              : 'Visualize service dependencies and export to any CMDB'}
+              : `Visualize service dependencies and export to any CMDB${appVersion ? ` · v${appVersion}` : ''}`}
           </TitleBar.Subtitle>
           <TitleBar.Suffix>
             <Flex gap={8}>
@@ -313,9 +330,16 @@ function AppContent() {
       <Page.Main>
         <Flex flexDirection="column" gap={16} style={{ padding: 16 }}>
           {error && (
-            <Surface style={{ padding: 16, borderLeft: '4px solid var(--dt-colors-border-critical-default)' }}>
-              <Paragraph style={{ color: 'var(--dt-colors-text-critical-default)' }}>{error}</Paragraph>
-            </Surface>
+            <Flex alignItems="center" gap={10} role="alert" style={{
+              padding: '10px 14px', borderRadius: 8,
+              background: 'color-mix(in oklab, var(--dt-colors-background-critical-default) 10%, var(--dt-colors-background-container-default))',
+              border: '1px solid color-mix(in oklab, var(--dt-colors-background-critical-default) 45%, transparent)',
+            }}>
+              <CriticalIcon size={16} style={{ color: 'var(--dt-colors-text-critical-default)', flexShrink: 0 }} />
+              <Paragraph style={{ color: 'var(--dt-colors-text-critical-default)', margin: 0, fontSize: 13 }}>
+                <strong>Failed to load topology.</strong> {error}
+              </Paragraph>
+            </Flex>
           )}
 
           <Tabs>

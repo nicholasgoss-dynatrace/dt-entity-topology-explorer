@@ -33,6 +33,11 @@ interface EntityWithRelationships {
   };
 }
 
+interface QueryRequest {
+  from?: string;  // relative e.g. "now-2h" or ISO timestamp
+  to?: string;
+}
+
 function fmtDate(tms: number | undefined): string | null {
   if (!tms) return null;
   return new Date(tms).toISOString().split('T')[0];
@@ -41,23 +46,28 @@ function fmtDate(tms: number | undefined): string | null {
 /**
  * App Function: fetches ALL SERVICE entities across every page, with their
  * "calls" relationships plus metadata fields used for CMDB export and card display.
+ * Accepts optional `from`/`to` time range (relative DT expressions or ISO timestamps).
  */
-export default async function queryTopology(): Promise<object> {
+export default async function queryTopology(payload: QueryRequest = {}): Promise<object> {
   try {
     const client = new MonitoredEntitiesClient(httpClient);
     const allEntities: EntityWithRelationships[] = [];
 
-    // First page — request relationship + metadata fields in one call
+    const timeParams: { from?: string; to?: string } = {};
+    if (payload.from) timeParams.from = payload.from;
+    if (payload.to)   timeParams.to   = payload.to;
+
+    // Request `properties` (whole object) — dotted sub-field notation is not supported.
     const firstResponse = await client.getEntities({
       entitySelector: 'type("SERVICE")',
-      fields: 'fromRelationships.calls,tags,managementZones,properties.serviceType,properties.technologyNames,firstSeenTms,lastSeenTms',
+      fields: 'fromRelationships.calls,tags,managementZones,properties,firstSeenTms,lastSeenTms',
       pageSize: 500,
+      ...timeParams,
     });
 
     const firstPage = ((firstResponse.entities as unknown) as EntityWithRelationships[]) || [];
     allEntities.push(...firstPage);
 
-    // Follow pagination until exhausted
     let nextPageKey = firstResponse.nextPageKey;
     while (nextPageKey) {
       const page = await client.getEntities({ nextPageKey });
@@ -66,11 +76,9 @@ export default async function queryTopology(): Promise<object> {
       nextPageKey = page.nextPageKey;
     }
 
-    // entityId → displayName lookup for edge resolution
     const nameMap: Record<string, string> = {};
     allEntities.forEach(e => { nameMap[e.entityId] = e.displayName; });
 
-    // Flatten to source → target edges
     const edges: EdgeResult[] = [];
     allEntities.forEach(entity => {
       const calls = entity.fromRelationships?.calls || [];
@@ -80,7 +88,6 @@ export default async function queryTopology(): Promise<object> {
       });
     });
 
-    // Build per-service detail map for card rendering and CMDB export
     const entityDetails: Record<string, EntityDetail> = {};
     allEntities.forEach(entity => {
       const props = entity.properties || {};

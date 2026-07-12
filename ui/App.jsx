@@ -89,6 +89,15 @@ function detectApplications(edges, allServiceNames = []) {
   }).sort((a, b) => a.name.localeCompare(b.name));
 }
 
+const TIMEFRAME_OPTIONS = [
+  { label: 'Last 2 hours',  value: 'now-2h'  },
+  { label: 'Last 6 hours',  value: 'now-6h'  },
+  { label: 'Last 24 hours', value: 'now-24h' },
+  { label: 'Last 3 days',   value: 'now-3d'  },
+  { label: 'Last 7 days',   value: 'now-7d'  },
+  { label: 'Last 30 days',  value: 'now-30d' },
+];
+
 function AppContent() {
   const [edges, setEdges] = useState([]);
   const [applications, setApplications] = useState([]);
@@ -96,10 +105,11 @@ function AppContent() {
   const [totalServices, setTotalServices] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [timeframe, setTimeframe] = useState('now-2h');
 
-  useEffect(() => { loadTopology(); }, []);
+  useEffect(() => { loadTopology(timeframe); }, []);
 
-  const loadTopology = async () => {
+  const loadTopology = async (from = timeframe) => {
     try {
       setLoading(true);
       setError(null);
@@ -107,6 +117,8 @@ function AppContent() {
       const response = await fetch('/api/queryTopology', {
         method: 'POST',
         credentials: 'include',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from }),
       });
 
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
@@ -389,8 +401,42 @@ function AppContent() {
               : `Visualize service dependencies and export to any CMDB${appVersion ? ` · v${appVersion}` : ''}`}
           </TitleBar.Subtitle>
           <TitleBar.Suffix>
-            <Flex gap={8}>
-              <Button variant="default" onClick={loadTopology}>Refresh</Button>
+            <Flex gap={8} alignItems="center">
+              {/* Timeframe picker */}
+              <Flex gap={0} alignItems="center" style={{
+                border: '1px solid var(--dt-colors-border-neutral-default)',
+                borderRadius: 6, overflow: 'hidden',
+              }}>
+                {TIMEFRAME_OPTIONS.map((opt, idx) => (
+                  <button
+                    key={opt.value}
+                    onClick={() => {
+                      setTimeframe(opt.value);
+                      loadTopology(opt.value);
+                    }}
+                    style={{
+                      padding: '5px 10px',
+                      fontSize: 12,
+                      fontWeight: timeframe === opt.value ? 600 : 400,
+                      border: 'none',
+                      borderRight: idx < TIMEFRAME_OPTIONS.length - 1
+                        ? '1px solid var(--dt-colors-border-neutral-default)'
+                        : 'none',
+                      cursor: 'pointer',
+                      background: timeframe === opt.value
+                        ? 'var(--dt-colors-background-primary-default)'
+                        : 'var(--dt-colors-background-container-default)',
+                      color: timeframe === opt.value
+                        ? 'var(--dt-colors-text-primary-reversed-default)'
+                        : 'var(--dt-colors-text-neutral-default)',
+                      transition: 'background 0.15s, color 0.15s',
+                    }}
+                  >
+                    {opt.label}
+                  </button>
+                ))}
+              </Flex>
+              <Button variant="default" onClick={() => loadTopology(timeframe)}>Refresh</Button>
               {applications.length > 0 && (
                 <>
                   <Button variant="default" onClick={exportAllCMDB}>Export All (CMDB)</Button>

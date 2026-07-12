@@ -4,7 +4,7 @@
     "id": "my.topologyexplorer",
     "name": "Topology Explorer",
     "description": "Visualize service dependencies and export to any CMDB",
-    "version": "2.5.0",
+    "version": "2.6.0",
     "scopes": [
       {
         "name": "environment-api:entities:read",

@@ -43,10 +43,11 @@ function normalizeEdges(edges) {
 }
 
 /**
- * Detect "Applications" from a flat edge list.
+ * Detect "Applications" from a flat edge list plus the full set of known service names.
  * An Application = a root service (nothing calls it) + its full transitive dependency tree.
+ * Services with no relationships at all appear as single-node Applications.
  */
-function detectApplications(edges) {
+function detectApplications(edges, allServiceNames = []) {
   const allNodes = new Set();
   const calledBy = new Set(); // services that are called by something
 
@@ -55,6 +56,9 @@ function detectApplications(edges) {
     allNodes.add(target);
     calledBy.add(target);
   });
+
+  // Include isolated services (exist in DT but have no calls relationships)
+  allServiceNames.forEach(name => allNodes.add(name));
 
   // Root services = nodes that are never a target (nothing upstream calls them)
   const roots = [...allNodes].filter(node => !calledBy.has(node));
@@ -94,6 +98,7 @@ function detectApplications(edges) {
 function AppContent() {
   const [edges, setEdges] = useState([]);
   const [applications, setApplications] = useState([]);
+  const [totalServices, setTotalServices] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -118,8 +123,14 @@ function AppContent() {
 
       const rawEdges = result.edges || [];
       const fetchedEdges = normalizeEdges(rawEdges);
+
+      // Normalize isolated service names the same way edges are normalized
+      const rawServiceNames = result.allServiceNames || [];
+      const normalizedServiceNames = [...new Set(rawServiceNames.map(normalizeServiceName))];
+
       setEdges(fetchedEdges);
-      setApplications(detectApplications(fetchedEdges));
+      setApplications(detectApplications(fetchedEdges, normalizedServiceNames));
+      setTotalServices(result.totalServices || normalizedServiceNames.length);
     } catch (err) {
       setError(err.message);
       console.error('Topology load error:', err);
@@ -285,7 +296,7 @@ function AppContent() {
           <TitleBar.Title>Topology Explorer</TitleBar.Title>
           <TitleBar.Subtitle>
             {applications.length > 0
-              ? `${applications.length} application${applications.length !== 1 ? 's' : ''} discovered across ${edges.length} service dependencies`
+              ? `${applications.length} application${applications.length !== 1 ? 's' : ''} · ${totalServices} service${totalServices !== 1 ? 's' : ''} · ${edges.length} dependenc${edges.length !== 1 ? 'ies' : 'y'}`
               : 'Visualize service dependencies and export to any CMDB'}
           </TitleBar.Subtitle>
           <TitleBar.Suffix>

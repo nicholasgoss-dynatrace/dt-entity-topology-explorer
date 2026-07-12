@@ -12,122 +12,89 @@ import { AnalyticsIcon } from '@dynatrace/strato-icons';
 
 // Dynatrace brand palette
 const DT = {
-  BLUE:       '#1C5BE5',
-  INDIGO:     '#4635D6',
-  SKY:        '#1497FF',
-  CYAN:       '#54C8E9',
-  PURPLE:     '#B23BE4',
-  LIME:       '#BDDF28',
-  GREEN:      '#73BE28',
-  MAGENTA:    '#E436FF',
+  BLUE:    '#1C5BE5',
+  INDIGO:  '#4635D6',
+  SKY:     '#1497FF',
+  CYAN:    '#54C8E9',
+  PURPLE:  '#B23BE4',
+  LIME:    '#73BE28',  // using GREEN for db — LIME is too yellow on white
+  GREEN:   '#73BE28',
+  MAGENTA: '#E436FF',
 };
 
-const DARK_BG     = '#0f1423';
-const EDGE_COLOR  = '#54C8E9';
-const LABEL_COLOR = '#c8d6f0';
+// Light canvas — matches DT's own topology/flow diagrams
+const CANVAS_BG   = '#f0f4f8';
+const CARD_BG     = '#ffffff';
+const EDGE_COLOR  = DT.BLUE;
+const LABEL_COLOR = '#1c2028';
 
-// --- SVG icon data URIs (white, 24x24 viewBox) ---
+// Node card dimensions
+const NODE_W      = 160;
+const NODE_H      = 64;
+const ROOT_W      = 180;
+const ROOT_H      = 72;
+const HEADER_H    = 22;  // colored strip at top of each card
 
-// Generic service: three layered rectangles (server/microservice)
-const SERVICE_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <rect x="3" y="4" width="18" height="4" rx="1" fill="white" opacity="0.9"/>
-  <rect x="3" y="10" width="18" height="4" rx="1" fill="white" opacity="0.9"/>
-  <rect x="3" y="16" width="18" height="4" rx="1" fill="white" opacity="0.9"/>
-  <circle cx="19" cy="6" r="1" fill="#14192e"/>
-  <circle cx="19" cy="12" r="1" fill="#14192e"/>
-  <circle cx="19" cy="18" r="1" fill="#14192e"/>
-</svg>`)}`;
-
-// Frontend/web: browser window
-const WEB_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <rect x="2" y="3" width="20" height="16" rx="2" fill="none" stroke="white" stroke-width="1.8"/>
-  <line x1="2" y1="8" x2="22" y2="8" stroke="white" stroke-width="1.8"/>
-  <circle cx="5.5" cy="5.5" r="1" fill="white"/>
-  <circle cx="9" cy="5.5" r="1" fill="white"/>
-  <rect x="5" y="11" width="14" height="2" rx="1" fill="white" opacity="0.7"/>
-  <rect x="5" y="15" width="9" height="2" rx="1" fill="white" opacity="0.5"/>
-</svg>`)}`;
-
-// gRPC/API: connected nodes
-const API_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <circle cx="12" cy="12" r="3" fill="white"/>
-  <circle cx="4"  cy="6"  r="2" fill="white" opacity="0.8"/>
-  <circle cx="20" cy="6"  r="2" fill="white" opacity="0.8"/>
-  <circle cx="4"  cy="18" r="2" fill="white" opacity="0.8"/>
-  <circle cx="20" cy="18" r="2" fill="white" opacity="0.8"/>
-  <line x1="6"  y1="7"  x2="10" y2="10.5" stroke="white" stroke-width="1.4" opacity="0.7"/>
-  <line x1="18" y1="7"  x2="14" y2="10.5" stroke="white" stroke-width="1.4" opacity="0.7"/>
-  <line x1="6"  y1="17" x2="10" y2="13.5" stroke="white" stroke-width="1.4" opacity="0.7"/>
-  <line x1="18" y1="17" x2="14" y2="13.5" stroke="white" stroke-width="1.4" opacity="0.7"/>
-</svg>`)}`;
-
-// Proxy/gateway: shield/funnel
-const PROXY_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <path d="M12 2 L20 6 L20 12 C20 17 12 22 12 22 C12 22 4 17 4 12 L4 6 Z"
-        fill="none" stroke="white" stroke-width="1.8" stroke-linejoin="round"/>
-  <line x1="8" y1="10" x2="16" y2="10" stroke="white" stroke-width="1.5"/>
-  <line x1="9" y1="13.5" x2="15" y2="13.5" stroke="white" stroke-width="1.5"/>
-  <line x1="11" y1="17" x2="13" y2="17" stroke="white" stroke-width="1.5"/>
-</svg>`)}`;
-
-// Database
-const DB_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <ellipse cx="12" cy="6" rx="8" ry="3" fill="none" stroke="white" stroke-width="1.8"/>
-  <path d="M4 6 L4 18 C4 19.7 7.6 21 12 21 C16.4 21 20 19.7 20 18 L20 6"
-        fill="none" stroke="white" stroke-width="1.8"/>
-  <line x1="4" y1="12" x2="20" y2="12" stroke="white" stroke-width="1.2" opacity="0.6"/>
-</svg>`)}`;
-
-// Queue/messaging
-const QUEUE_ICON = `data:image/svg+xml;utf8,${encodeURIComponent(`
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">
-  <rect x="2"  y="5"  width="20" height="5" rx="1.5" fill="white" opacity="0.9"/>
-  <rect x="2"  y="13" width="20" height="5" rx="1.5" fill="white" opacity="0.6"/>
-  <path d="M18 21 L22 18.5 L18 16" fill="none" stroke="white" stroke-width="1.5" opacity="0.5"/>
-</svg>`)}`;
-
-// Darken a hex color for use as a node background (keep text/icon readable)
-function darken(hex, amount = 0.55) {
-  const n = parseInt(hex.slice(1), 16);
-  const r = Math.round(((n >> 16) & 0xff) * (1 - amount));
-  const g = Math.round(((n >> 8)  & 0xff) * (1 - amount));
-  const b = Math.round((n & 0xff)         * (1 - amount));
-  return `#${[r, g, b].map(v => v.toString(16).padStart(2, '0')).join('')}`;
-}
-
-function detectIconAndColor(name, isRoot) {
+// Map service name patterns → DT brand accent color
+function detectAccent(name, isRoot) {
+  if (isRoot) return DT.BLUE;
   const n = name.toLowerCase();
-
-  if (isRoot)
-    return { icon: WEB_ICON,   accent: DT.BLUE,    bg: darken(DT.BLUE),    border: DT.BLUE };
   if (n.includes('frontend') || n.includes('web') || n.includes('ui') || n.includes('browser'))
-    return { icon: WEB_ICON,   accent: DT.SKY,     bg: darken(DT.SKY),     border: DT.SKY };
+    return DT.SKY;
   if (n.includes('proxy') || n.includes('gateway') || n.includes('ingress') || n.includes('nginx'))
-    return { icon: PROXY_ICON, accent: DT.INDIGO,  bg: darken(DT.INDIGO),  border: DT.INDIGO };
+    return DT.INDIGO;
   if (n.includes('grpc') || n.includes('api') || n.includes('graphql') || n.includes('rest'))
-    return { icon: API_ICON,   accent: DT.CYAN,    bg: darken(DT.CYAN),    border: DT.CYAN };
+    return DT.CYAN;
   if (n.includes('db') || n.includes('database') || n.includes('mysql') ||
       n.includes('postgres') || n.includes('mongo') || n.includes('redis'))
-    return { icon: DB_ICON,    accent: DT.LIME,    bg: darken(DT.LIME),    border: DT.LIME };
+    return DT.LIME;
   if (n.includes('queue') || n.includes('kafka') || n.includes('rabbit') ||
       n.includes('topic') || n.includes('event'))
-    return { icon: QUEUE_ICON, accent: DT.PURPLE,  bg: darken(DT.PURPLE),  border: DT.PURPLE };
+    return DT.PURPLE;
   if (n.includes('email') || n.includes('notification') || n.includes('alert'))
-    return { icon: SERVICE_ICON, accent: DT.MAGENTA, bg: darken(DT.MAGENTA), border: DT.MAGENTA };
-  return { icon: SERVICE_ICON, accent: DT.GREEN,   bg: darken(DT.GREEN),   border: DT.GREEN };
+    return DT.MAGENTA;
+  return DT.GREEN;
+}
+
+// Keep detectIconAndColor for the service chip list below the graph
+function detectIconAndColor(name, isRoot) {
+  const accent = detectAccent(name, isRoot);
+  return { accent };
+}
+
+/**
+ * Generates an SVG data URI for the card background:
+ *  - Colored header strip at the top
+ *  - White body below
+ * Root nodes get a solid colored background instead.
+ */
+function buildCardSvg(accent, isRoot, w, h) {
+  let svg;
+  if (isRoot) {
+    // Solid header color for the root/entry service
+    svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">
+      <rect width="${w}" height="${h}" rx="8" ry="8" fill="${accent}"/>
+    </svg>`;
+  } else {
+    // Header strip + white body
+    svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}">
+      <rect width="${w}" height="${h}" rx="8" ry="8" fill="${CARD_BG}"/>
+      <rect width="${w}" height="${HEADER_H}" rx="8" ry="8" fill="${accent}"/>
+      <rect y="${HEADER_H - 3}" width="${w}" height="3" fill="${accent}"/>
+    </svg>`;
+  }
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
 }
 
 function buildCytoElements(app) {
   const nodes = app.services.map(svc => {
     const isRoot = svc === app.name;
-    const { icon, bg, border, accent } = detectIconAndColor(svc, isRoot);
+    const accent  = detectAccent(svc, isRoot);
+    const w       = isRoot ? ROOT_W : NODE_W;
+    const h       = isRoot ? ROOT_H : NODE_H;
+    const cardSvg = buildCardSvg(accent, isRoot, w, h);
     return {
-      data: { id: svc, label: svc, isRoot, icon, bg, border, accent },
+      data: { id: svc, label: svc, isRoot, accent, cardSvg, w, h },
     };
   });
 
@@ -148,93 +115,96 @@ function buildCytoElements(app) {
 
 function CytoscapeGraph({ app }) {
   const containerRef = useRef(null);
-  const cyRef = useRef(null);
+  const cyRef        = useRef(null);
 
-  // dagre LR: height driven by how many nodes share the same rank column
-  const graphHeight = Math.max(400, Math.min(1000, app.serviceCount * 80));
+  // Rectangular nodes need more vertical space than circles did
+  const graphHeight = Math.max(420, Math.min(1400, app.serviceCount * 96));
 
   useEffect(() => {
     if (!containerRef.current) return;
     if (cyRef.current) { cyRef.current.destroy(); cyRef.current = null; }
 
-    const elements = buildCytoElements(app);
-
     cyRef.current = cytoscape({
       container: containerRef.current,
-      elements,
+      elements: buildCytoElements(app),
 
       style: [
+        // ── Base node: card with colored header strip ──────────────────────
         {
           selector: 'node',
           style: {
-            // Circle appearance
-            'shape': 'ellipse',
-            'width': 56,
-            'height': 56,
-            'background-color': 'data(bg)',
-            'border-color': 'data(border)',
-            'border-width': 2,
-            // Icon inside circle — centered
-            'background-image': 'data(icon)',
-            'background-fit': 'none',
+            'shape': 'roundrectangle',
+            'width': NODE_W,
+            'height': NODE_H,
+            // Card background image (header stripe + white body)
+            'background-image': 'data(cardSvg)',
+            'background-fit': 'cover',
             'background-clip': 'node',
-            'background-width': '55%',
-            'background-height': '55%',
-            'background-position-x': '50%',
-            'background-position-y': '50%',
-            // Label OUTSIDE below the node
+            'background-color': CARD_BG,
+            // Border matches the accent color
+            'border-color': 'data(accent)',
+            'border-width': 1.5,
+            // Label centered — sits naturally in the white body below the header
             'label': 'data(label)',
             'color': LABEL_COLOR,
-            'text-valign': 'bottom',
+            'text-valign': 'center',
             'text-halign': 'center',
-            'text-margin-y': 8,
-            'font-size': '11px',
-            'font-family': 'system-ui, sans-serif',
+            'font-size': '10px',
+            'font-family': 'system-ui, -apple-system, sans-serif',
+            'font-weight': '600',
             'text-wrap': 'wrap',
-            'text-max-width': '100px',
-            'text-background-color': DARK_BG,
-            'text-background-opacity': 0.7,
-            'text-background-padding': '2px',
-            'text-background-shape': 'roundrectangle',
+            'text-max-width': '144px',
           },
         },
+        // ── Root/entry node: solid brand color, white text ─────────────────
         {
           selector: 'node[?isRoot]',
           style: {
-            'width': 72,
-            'height': 72,
-            'border-width': 3,
-            'font-size': '12px',
-            'font-weight': 'bold',
+            'width': ROOT_W,
+            'height': ROOT_H,
+            'border-width': 2,
+            'font-size': '11px',
+            'font-weight': '700',
             'color': '#ffffff',
           },
         },
+        // ── Hover highlight ────────────────────────────────────────────────
+        {
+          selector: 'node:active',
+          style: {
+            'border-width': 2.5,
+            'overlay-opacity': 0,
+          },
+        },
+        // ── Edges: flowing bezier in DT blue ──────────────────────────────
         {
           selector: 'edge',
           style: {
-            'width': 1.5,
-            'line-color': DT.CYAN,
-            'target-arrow-color': DT.CYAN,
-            'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
-            'opacity': 0.5,
+            'width': 2,
+            'line-color': EDGE_COLOR,
+            'target-arrow-color': EDGE_COLOR,
+            'target-arrow-shape': 'triangle',
+            'arrow-scale': 0.9,
+            'opacity': 0.6,
           },
         },
+        // ── Selected state ─────────────────────────────────────────────────
         {
           selector: ':selected',
           style: {
-            'border-color': '#7eb8ff',
-            'border-width': 3,
+            'border-color': DT.SKY,
+            'border-width': 2.5,
+            'opacity': 1,
           },
         },
       ],
 
       layout: {
         name: 'dagre',
-        rankDir: 'LR',          // Left → Right, root node on the far left
-        align: 'UL',
-        nodeSep: 60,            // vertical spacing between nodes in the same rank
-        rankSep: 120,           // horizontal spacing between ranks (columns)
+        rankDir: 'LR',
+        nodeSep: 44,   // vertical gap between nodes in the same rank column
+        rankSep: 200,  // horizontal gap between rank columns (wider for card nodes)
         edgeSep: 20,
         ranker: 'network-simplex',
         padding: 60,
@@ -243,7 +213,7 @@ function CytoscapeGraph({ app }) {
       },
 
       wheelSensitivity: 0.3,
-      minZoom: 0.1,
+      minZoom: 0.08,
       maxZoom: 4,
     });
 
@@ -254,15 +224,44 @@ function CytoscapeGraph({ app }) {
     <div style={{ position: 'relative' }}>
       <div
         ref={containerRef}
-        style={{ width: '100%', height: graphHeight, background: DARK_BG, borderRadius: 8 }}
+        style={{
+          width: '100%',
+          height: graphHeight,
+          background: CANVAS_BG,
+          borderRadius: 8,
+          // Subtle inner border to separate canvas from card background
+          border: '1px solid var(--dt-colors-border-neutral-default)',
+        }}
       />
       <div style={{
         position: 'absolute', bottom: 8, right: 12,
-        fontSize: 11, color: '#4a6098',
+        fontSize: 11, color: '#8494a8',
         userSelect: 'none', pointerEvents: 'none',
       }}>
         Scroll to zoom · Drag to pan
       </div>
+      {/* Legend */}
+      <Flex gap={16} style={{ marginTop: 8 }}>
+        {[
+          { color: DT.BLUE,    label: 'Application root' },
+          { color: DT.SKY,     label: 'Frontend / web' },
+          { color: DT.INDIGO,  label: 'Proxy / gateway' },
+          { color: DT.CYAN,    label: 'API / gRPC' },
+          { color: DT.LIME,    label: 'Database / cache' },
+          { color: DT.PURPLE,  label: 'Queue / events' },
+          { color: DT.GREEN,   label: 'Service' },
+        ].map(({ color, label }) => (
+          <Flex key={label} alignItems="center" gap={5}>
+            <span style={{
+              display: 'inline-block', width: 10, height: 10, borderRadius: 2,
+              background: color, flexShrink: 0,
+            }} />
+            <span style={{ fontSize: 11, color: 'var(--dt-colors-text-secondary-default)' }}>
+              {label}
+            </span>
+          </Flex>
+        ))}
+      </Flex>
     </div>
   );
 }
@@ -290,7 +289,6 @@ function ApplicationCard({ app, onExportJSON, onExportCSV, onExportXML }) {
 
         <CytoscapeGraph app={app} />
 
-        {/* Service chips — theme-aware: tinted bg, accent border, accent text */}
         <Flex flexWrap="wrap" gap={6}>
           {[...app.services].sort((a, b) => a.localeCompare(b)).map(svc => {
             const { accent } = detectIconAndColor(svc, svc === app.name);

@@ -1,0 +1,26 @@
+{
+  "environmentUrl": "https://suz7562h.sprint.apps.dynatracelabs.com",
+  "app": {
+    "id": "my.topologyexplorer",
+    "name": "Topology Explorer",
+    "description": "Visualize service dependencies and export to any CMDB",
+    "version": "2.5.0",
+    "scopes": [
+      {
+        "name": "environment-api:entities:read",
+        "comment": "Read service entities"
+      },
+      {
+        "name": "storage:entities:read",
+        "comment": "DQL access to entity storage"
+      },
+      {
+        "name": "environment-api:topology:read",
+        "comment": "Read smartscape topology and service dependency data"
+      }
+    ]
+  },
+  "build": {
+    "sourceRoot": "ui"
+  }
+}

@@ -1,0 +1,156 @@
+.topology-explorer {
+  display: grid;
+  grid-template-columns: 300px 1fr;
+  gap: 30px;
+}
+
+.explorer-controls {
+  background: #f5f7fa;
+  padding: 20px;
+  border-radius: 8px;
+  height: fit-content;
+  max-height: 600px;
+  overflow-y: auto;
+}
+
+.control-group {
+  margin-bottom: 25px;
+}
+
+.control-group label {
+  display: block;
+  font-weight: 600;
+  color: #333;
+  margin-bottom: 12px;
+  font-size: 0.95em;
+}
+
+.service-list {
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  max-height: 200px;
+  overflow-y: auto;
+  background: white;
+}
+
+.service-checkbox {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-bottom: 1px solid #f0f0f0;
+  transition: background 0.2s;
+}
+
+.service-checkbox:hover {
+  background: #f9fafb;
+}
+
+.service-checkbox:last-child {
+  border-bottom: none;
+}
+
+.service-checkbox input[type="checkbox"] {
+  margin-right: 10px;
+  cursor: pointer;
+}
+
+.service-checkbox span {
+  flex: 1;
+  font-size: 0.9em;
+  color: #333;
+  word-break: break-word;
+}
+
+.control-group select {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid #d0d7de;
+  border-radius: 6px;
+  font-size: 0.95em;
+  background: white;
+  cursor: pointer;
+}
+
+.control-group select:focus {
+  outline: none;
+  border-color: #667eea;
+  box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+}
+
+.generate-button {
+  width: 100%;
+  padding: 12px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+}
+
+.generate-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 16px rgba(102, 126, 234, 0.3);
+}
+
+.generate-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.diagrams-container {
+  display: flex;
+  flex-direction: column;
+  gap: 30px;
+}
+
+.diagram-section h3 {
+  margin-bottom: 15px;
+  color: #333;
+  font-size: 1.2em;
+}
+
+.mermaid-container {
+  background: #f9fafb;
+  border: 1px solid #e0e4e8;
+  border-radius: 8px;
+  padding: 20px;
+  overflow-x: auto;
+}
+
+.mermaid {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 300px;
+}
+
+.placeholder {
+  text-align: center;
+  color: #999;
+  padding: 20px;
+}
+
+@media (max-width: 1024px) {
+  .topology-explorer {
+    grid-template-columns: 1fr;
+  }
+
+  .explorer-controls {
+    max-height: none;
+  }
+}
+
+@media (max-width: 768px) {
+  .topology-explorer {
+    grid-template-columns: 1fr;
+  }
+
+  .control-group select,
+  .service-list {
+    font-size: 0.9em;
+  }
+}

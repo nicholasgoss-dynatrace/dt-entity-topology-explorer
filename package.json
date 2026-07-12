@@ -1,0 +1,67 @@
+{
+  "name": "dynatrace-topology-explorer",
+  "version": "1.0.0",
+  "description": "Dynatrace App for visualizing service topology and exporting to CMDB",
+  "private": true,
+  "dependencies": {
+    "@dynatrace-sdk/app-environment": "^1.1.4",
+    "@dynatrace-sdk/client-classic-environment-v2": "^1.0.0",
+    "@dynatrace-sdk/client-filter-segment-management": "^1.7.1",
+    "@dynatrace-sdk/client-notification-v2": "^1.0.0",
+    "@dynatrace-sdk/client-platform-management-service": "^1.7.0",
+    "@dynatrace-sdk/client-query": "^1.25.0",
+    "@dynatrace-sdk/client-state": "^1.9.2",
+    "@dynatrace-sdk/http-client": "^1.0.0",
+    "@dynatrace-sdk/navigation": "^2.2.0",
+    "@dynatrace-sdk/react-hooks": "^1.12.1",
+    "@dynatrace-sdk/units": "^1.5.0",
+    "@dynatrace-sdk/user-preferences": "^1.1.4",
+    "@dynatrace/strato-components": "^3.5.0",
+    "@dynatrace/strato-design-tokens": "^1.5.0",
+    "@dynatrace/strato-icons": "^2.3.0",
+    "cytoscape": "^3.34.0",
+    "cytoscape-dagre": "^3.0.0",
+    "dagre": "^0.8.5",
+    "mermaid": "^10.6.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-intl": "^7.1.14",
+    "react-is": "^18.3.1"
+  },
+  "devDependencies": {
+    "dt-app": "^1.9.0",
+    "react-scripts": "5.0.1",
+    "typescript": "^6.0.3"
+  },
+  "scripts": {
+    "start": "react-scripts start",
+    "build": "react-scripts build",
+    "test": "react-scripts test",
+    "eject": "react-scripts eject",
+    "deploy": "dt-app deploy"
+  },
+  "eslintConfig": {
+    "extends": [
+      "react-app"
+    ]
+  },
+  "browserslist": {
+    "production": [
+      ">0.2%",
+      "not dead",
+      "not op_mini all"
+    ],
+    "development": [
+      "last 1 chrome version",
+      "last 1 firefox version",
+      "last 1 safari version"
+    ]
+  },
+  "allowScripts": {
+    "@swc/core@1.15.40": true,
+    "core-js@3.49.0": true,
+    "core-js-pure@3.49.0": true,
+    "esbuild@0.27.3": true,
+    "fsevents@2.3.3": true
+  }
+}

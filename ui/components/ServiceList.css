@@ -1,0 +1,151 @@
+.service-list-container {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.service-controls {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.service-controls h3 {
+  margin: 0;
+  color: #333;
+  font-size: 1.1em;
+}
+
+.select-all-button {
+  padding: 8px 16px;
+  background: #667eea;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-weight: 600;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: all 0.2s;
+}
+
+.select-all-button:hover {
+  background: #764ba2;
+  transform: translateY(-2px);
+}
+
+.service-items {
+  border: 1px solid #e0e4e8;
+  border-radius: 8px;
+  max-height: 500px;
+  overflow-y: auto;
+  background: white;
+}
+
+.service-item {
+  padding: 0;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.service-item:last-child {
+  border-bottom: none;
+}
+
+.service-item label {
+  display: flex;
+  align-items: flex-start;
+  padding: 12px;
+  cursor: pointer;
+  transition: background 0.2s;
+  gap: 12px;
+}
+
+.service-item label:hover {
+  background: #f9fafb;
+}
+
+.service-item input[type="checkbox"] {
+  margin-top: 2px;
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+}
+
+.service-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.service-name {
+  font-weight: 600;
+  color: #333;
+  font-size: 0.95em;
+  word-break: break-word;
+}
+
+.service-id {
+  font-size: 0.85em;
+  color: #999;
+  font-family: monospace;
+  word-break: break-all;
+}
+
+.loading-text,
+.empty-text {
+  padding: 40px 20px;
+  text-align: center;
+  color: #999;
+}
+
+.service-stats {
+  background: #f5f7fa;
+  padding: 12px;
+  border-radius: 6px;
+  text-align: center;
+  font-size: 0.9em;
+  color: #666;
+}
+
+.service-stats p {
+  margin: 0;
+}
+
+.export-preview {
+  background: #d4edda;
+  border: 1px solid #c3e6cb;
+  border-radius: 6px;
+  padding: 12px;
+  color: #155724;
+}
+
+.export-preview h4 {
+  margin: 0 0 8px 0;
+  font-size: 0.95em;
+}
+
+.export-preview p {
+  margin: 0;
+  font-size: 0.9em;
+}
+
+/* Scrollbar styling */
+.service-items::-webkit-scrollbar {
+  width: 8px;
+}
+
+.service-items::-webkit-scrollbar-track {
+  background: #f1f1f1;
+}
+
+.service-items::-webkit-scrollbar-thumb {
+  background: #888;
+  border-radius: 4px;
+}
+
+.service-items::-webkit-scrollbar-thumb:hover {
+  background: #555;
+}

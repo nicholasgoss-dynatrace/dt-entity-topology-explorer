@@ -112,7 +112,7 @@ export default async function queryTopology(payload: QueryRequest = {}): Promise
     if (payload.to)   timeParams.to   = payload.to;
 
     const BASE_FIELDS = 'tags,managementZones,properties';
-    const REL_FIELDS  = 'fromRelationships.calls,fromRelationships.runsOn,fromRelationships.isRunningOn,toRelationships.runsOn,toRelationships.calls';
+    const REL_FIELDS  = 'fromRelationships,toRelationships';
 
     // Parallel fetch — all entity types + open problems
     const [apps, services, processGroups, hosts, problemsRes] = await Promise.all([

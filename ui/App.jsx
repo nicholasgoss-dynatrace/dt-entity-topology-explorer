@@ -355,7 +355,7 @@ function AppContent() {
       <Page>
         <Page.Header>
           <TitleBar>
-            <TitleBar.Title>Topology Explorer</TitleBar.Title>
+            <TitleBar.Title>Entity Explorer</TitleBar.Title>
             <TitleBar.Subtitle>Discovering applications...</TitleBar.Subtitle>
           </TitleBar>
         </Page.Header>
@@ -387,7 +387,7 @@ function AppContent() {
     <Page>
       <Page.Header>
         <TitleBar>
-          <TitleBar.Title>Topology Explorer</TitleBar.Title>
+          <TitleBar.Title>Entity Explorer</TitleBar.Title>
           <TitleBar.Subtitle>
             {applications.length > 0
               ? `${applications.length} application${applications.length !== 1 ? 's' : ''} · ${totalServices} service${totalServices !== 1 ? 's' : ''} · ${edges.length} dependenc${edges.length !== 1 ? 'ies' : 'y'}`

@@ -316,7 +316,7 @@ function FlowGraph({ app, entityDetails }) {
         onEdgesChange={onEdgesChange}
         nodeTypes={NODE_TYPES}
         fitView
-        fitViewOptions={{ padding: 0.15 }}
+        fitViewOptions={{ padding: 0.35, maxZoom: 0.75 }}
         minZoom={0.05}
         maxZoom={4}
         proOptions={{ hideAttribution: true }}

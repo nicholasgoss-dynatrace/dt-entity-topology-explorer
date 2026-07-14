@@ -577,14 +577,14 @@ function AppContent() {
                           onClick={() => toggleMZ(mz)}
                           style={{
                             padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 500,
-                            cursor: 'pointer', border: 'none', transition: 'all 0.15s',
+                            cursor: 'pointer', transition: 'all 0.15s',
                             background: active
                               ? 'var(--dt-colors-background-primary-default)'
                               : 'var(--dt-colors-background-container-neutral-default)',
                             color: active
                               ? 'var(--dt-colors-text-primary-reversed-default)'
                               : 'var(--dt-colors-text-neutral-default)',
-                            outline: active ? 'none' : '1px solid var(--dt-colors-border-neutral-default)',
+                            border: active ? '1px solid transparent' : '1px solid var(--dt-colors-border-neutral-default)',
                           }}
                         >
                           {mz}

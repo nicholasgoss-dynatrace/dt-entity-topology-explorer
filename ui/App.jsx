@@ -55,13 +55,11 @@ function detectApplications(serviceEdges, allServiceNames, dtApplications, entit
 
   // Build service adjacency
   const adjacency = {};
-  const calledBy   = new Set();
   const allNodes   = new Set(allServiceNames.map(normalizeServiceName));
 
   serviceEdges.forEach(({ source, target }) => {
     if (!adjacency[source]) adjacency[source] = [];
     adjacency[source].push(target);
-    calledBy.add(target);
     allNodes.add(source);
     allNodes.add(target);
   });
@@ -70,8 +68,8 @@ function detectApplications(serviceEdges, allServiceNames, dtApplications, entit
     const visited = new Set();
     const reachableEdges = [];
     const queue = [root];
-    while (queue.length) {
-      const node = queue.shift();
+    for (let i = 0; i < queue.length; i++) {
+      const node = queue[i];
       if (visited.has(node)) continue;
       visited.add(node);
       (adjacency[node] || []).forEach(target => {
@@ -94,13 +92,17 @@ function detectApplications(serviceEdges, allServiceNames, dtApplications, entit
         .map(normalizeServiceName)
         .filter(name => allNodes.has(name));
 
-      // BFS from each entry service
-      const appVisited = new Set();
-      const appEdges   = [];
+      // BFS from each entry service (deduplicate edges across multiple entry points)
+      const appVisited  = new Set();
+      const seenEdgeKey = new Set();
+      const appEdges    = [];
       for (const entry of entryServices) {
         const { visited, reachableEdges } = bfs(entry);
         visited.forEach(n => appVisited.add(n));
-        reachableEdges.forEach(e => appEdges.push(e));
+        reachableEdges.forEach(e => {
+          const k = `${e.source}||${e.target}`;
+          if (!seenEdgeKey.has(k)) { seenEdgeKey.add(k); appEdges.push(e); }
+        });
       }
 
       if (appVisited.size === 0 && entryServices.length === 0) continue;
@@ -131,9 +133,10 @@ function detectApplications(serviceEdges, allServiceNames, dtApplications, entit
   // ── Fall back to inferred roots for any services not claimed by a DT app ──
   const claimedServices = new Set(apps.flatMap(a => a.services));
   const unclaimedNodes  = [...allNodes].filter(n => !claimedServices.has(n));
+  const unclaimedSet    = new Set(unclaimedNodes);
   const unclaimedCalledBy = new Set(
     serviceEdges
-      .filter(e => unclaimedNodes.includes(e.source) || unclaimedNodes.includes(e.target))
+      .filter(e => unclaimedSet.has(e.source) || unclaimedSet.has(e.target))
       .map(e => e.target)
   );
   const inferredRoots = unclaimedNodes.filter(n => !unclaimedCalledBy.has(n));
@@ -148,7 +151,7 @@ function detectApplications(serviceEdges, allServiceNames, dtApplications, entit
       services:     [...visited],
       edges:        reachableEdges,
       appDetail:    null,
-      managementZones: [...visited].flatMap(svc => (entityDetails[svc]?.managementZones || [])),
+      managementZones: [...new Set([...visited].flatMap(svc => (entityDetails[svc]?.managementZones || [])))],
     });
   }
 
@@ -169,9 +172,12 @@ function AppContent() {
   const [error,            setError]             = useState(null);
   const [timeframe,        setTimeframe]         = useState({ from: 'now-2h', to: 'now' });
 
-  useEffect(() => { loadTopology('now-2h', 'now'); }, []);
+  const loadSeqRef = React.useRef(0);
+
+  useEffect(() => { loadTopology('now-2h', 'now'); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadTopology = async (from = 'now-2h', to = 'now') => {
+    const seq = ++loadSeqRef.current;
     try {
       setLoading(true);
       setError(null);
@@ -185,6 +191,7 @@ function AppContent() {
 
       if (!response.ok) throw new Error(`API Error: ${response.status}`);
       const result = await response.json();
+      if (seq !== loadSeqRef.current) return;
       if (!result.success) throw new Error(result.error || 'Failed to fetch topology');
 
       // Normalize entity detail keys (strip protocol suffixes)
@@ -197,8 +204,7 @@ function AppContent() {
           // Also keep entityId key for cross-type lookups
           normalizedDetails[d.entityId] = d;
         } else {
-          normalizedDetails[d.entityId]     = d;
-          normalizedDetails[d.displayName]  = d;
+          normalizedDetails[d.entityId] = d;
         }
       });
 
@@ -219,10 +225,11 @@ function AppContent() {
         normalizedDetails,
       ));
     } catch (err) {
-      setError(err.message);
+      if (seq !== loadSeqRef.current) return;
+      setError(err instanceof Error ? err.message : String(err));
       console.error('Topology load error:', err);
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) setLoading(false);
     }
   };
 
@@ -240,17 +247,22 @@ function AppContent() {
 
   // ── Export helpers ─────────────────────────────────────────────────────────
 
+  const safeFilename = (name) => name.replace(/[\\/:*?"<>|]/g, '_').trim();
+
   const exportFile = (content, filename, type) => {
     const blob = new Blob([content], { type });
     const url  = URL.createObjectURL(blob);
     const a    = document.createElement('a');
-    a.href = url; a.download = filename; a.click();
-    URL.revokeObjectURL(url);
+    a.href = url; a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 100);
   };
 
   const esc     = s => String(s).replace(/[<>&'"]/g,
     c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', "'": '&apos;', '"': '&quot;' }[c]));
-  const csvCell = v => `"${String(v ?? '').replace(/"/g, '""')}"`;
+  const csvCell = v => { const s = String(v ?? '').replace(/"/g, '""'); return `"${/^[=+\-@\t\r]/.test(s) ? "'" + s : s}"`; };
 
   const buildTree = (app) => {
     const adj = {};
@@ -285,7 +297,7 @@ function AppContent() {
 
   const exportAppJSON = (app) => {
     const tree = buildTree(app);
-    exportFile(JSON.stringify(tree, null, 2), `${app.name}-topology.json`, 'application/json');
+    exportFile(JSON.stringify(tree, null, 2), `${safeFilename(app.name)}-topology.json`, 'application/json');
   };
 
   const exportAppCSV = (app) => {
@@ -305,12 +317,12 @@ function AppContent() {
     const roots = app.isDtApp && app.entryServices?.length ? app.entryServices : [app.name];
     roots.forEach(root => dfs(root, app.isDtApp ? [app.name] : [], new Set(app.isDtApp ? [app.name] : [])));
     if (!allPaths.length) allPaths.push([app.name]);
-    const maxDepth = Math.max(...allPaths.map(p => p.length));
+    const maxDepth = allPaths.reduce((m, p) => Math.max(m, p.length), 0);
     const header = Array.from({ length: maxDepth }, (_, i) => `Level ${i + 1}`).join(',');
     const rows   = allPaths.map(p =>
       [...p, ...Array(maxDepth - p.length).fill('')].map(csvCell).join(',')
     );
-    exportFile([header, ...rows].join('\n'), `${app.name}-topology.csv`, 'text/csv');
+    exportFile([header, ...rows].join('\n'), `${safeFilename(app.name)}-topology.csv`, 'text/csv');
   };
 
   const exportAppXML = (app) => {
@@ -342,7 +354,7 @@ function AppContent() {
       renderNode(tree, 1),
       '</application>',
     ].join('\n');
-    exportFile(xml, `${app.name}-topology.xml`, 'application/xml');
+    exportFile(xml, `${safeFilename(app.name)}-topology.xml`, 'application/xml');
   };
 
   // CMDB CSV — flat ServiceNow-compatible, includes PG + host data
@@ -358,9 +370,18 @@ function AppContent() {
 
   function buildCMDBRows(app, csvCellFn) {
     const calledBy = {};
+    const callsBy  = {};
     app.edges.forEach(({ source, target }) => {
-      if (!calledBy[target]) calledBy[target] = [];
-      calledBy[target].push(source);
+      (calledBy[target] ||= []).push(source);
+      (callsBy[source]  ||= []).push(target);
+    });
+
+    // Pre-index allEdges by edgeType+source to avoid O(edges) scans per service
+    const runsOnBySrc   = {};
+    const hostedOnBySrc = {};
+    allEdges.forEach(e => {
+      if (e.edgeType === 'RUNS_ON')   { (runsOnBySrc[e.source]   ||= []).push(e); }
+      if (e.edgeType === 'HOSTED_ON') { (hostedOnBySrc[e.source] ||= []).push(e); }
     });
 
     return [...app.services].sort((a, b) => a.localeCompare(b)).map(svc => {
@@ -368,9 +389,7 @@ function AppContent() {
       const eid = d.entityId || '';
 
       // Find PGs hosting this service
-      const pgEdges = allEdges.filter(e =>
-        e.edgeType === 'RUNS_ON' && e.source === svc
-      );
+      const pgEdges   = runsOnBySrc[svc] || [];
       const pgDetails = pgEdges.map(e => entityDetails[e.target]).filter(Boolean);
       const pgNames   = pgDetails.map(p => p.displayName).join('; ');
       const pgIds     = pgDetails.map(p => p.entityId).join('; ');
@@ -379,9 +398,7 @@ function AppContent() {
 
       // Find hosts these PGs run on
       const hostDetails = pgEdges.flatMap(pgEdge => {
-        const hostEdges = allEdges.filter(e =>
-          e.edgeType === 'HOSTED_ON' && e.source === pgEdge.target
-        );
+        const hostEdges = hostedOnBySrc[pgEdge.target] || [];
         return hostEdges.map(e => entityDetails[e.target]).filter(Boolean);
       });
       const hostNames = hostDetails.map(h => h.displayName).join('; ');
@@ -391,7 +408,7 @@ function AppContent() {
       const ipList    = hostDetails.map(h => h.ipAddresses || '').join('; ');
       const cloudList = hostDetails.map(h => h.cloudType || '').join('; ');
 
-      const calls    = app.edges.filter(e => e.source === svc).map(e => e.target).join('; ');
+      const calls    = (callsBy[svc] || []).join('; ');
       const callers  = (calledBy[svc] || []).join('; ');
       const severity = eid ? (problems[eid] || '') : '';
 
@@ -411,7 +428,7 @@ function AppContent() {
 
   const exportAppCMDB = (app) => {
     const rows = buildCMDBRows(app, csvCell);
-    exportFile([CMDB_HEADER, ...rows].join('\n'), `${app.name}-cmdb.csv`, 'text/csv');
+    exportFile([CMDB_HEADER, ...rows].join('\n'), `${safeFilename(app.name)}-cmdb.csv`, 'text/csv');
   };
 
   const exportAllJSON = () => {
@@ -432,7 +449,7 @@ function AppContent() {
     { id: 'edgeType', header: 'Relationship', accessor: 'edgeType' },
   ];
 
-  const appVersion = getAppVersion();
+  const appVersion = React.useMemo(() => getAppVersion(), []);
 
   // ── Loading skeleton ───────────────────────────────────────────────────────
 
@@ -466,7 +483,7 @@ function AppContent() {
 
   // ── Main render ────────────────────────────────────────────────────────────
 
-  const totalProblems = Object.keys(problems).length;
+  const totalProblems = counts.openProblems ?? 0;
 
   return (
     <Page>
@@ -553,6 +570,8 @@ function AppContent() {
                       return (
                         <button
                           key={mz}
+                          type="button"
+                          aria-pressed={active}
                           onClick={() => toggleMZ(mz)}
                           style={{
                             padding: '4px 12px', borderRadius: 20, fontSize: 12, fontWeight: 500,
@@ -572,6 +591,7 @@ function AppContent() {
                     })}
                     {selectedMZs.length > 0 && (
                       <button
+                        type="button"
                         onClick={() => setSelectedMZs([])}
                         style={{
                           padding: '4px 10px', borderRadius: 20, fontSize: 11, cursor: 'pointer',

@@ -74,6 +74,24 @@ function rel(entity: RawEntity, direction: 'from' | 'to', name: string): EntityR
   return (map && map[name]) ? map[name] : [];
 }
 
+// Paginate problems query
+async function fetchAllProblems(
+  client: ProblemsClient,
+  params: Parameters<ProblemsClient['getProblems']>[0],
+): Promise<Array<{ severityLevel?: string; affectedEntities?: Array<{ entityId: { id: string } }> }>> {
+  type ProbRow = { severityLevel?: string; affectedEntities?: Array<{ entityId: { id: string } }> };
+  const all: ProbRow[] = [];
+  const first = await client.getProblems(params);
+  all.push(...((first.problems as unknown as ProbRow[]) || []));
+  let nextPageKey = (first as unknown as { nextPageKey?: string }).nextPageKey;
+  while (nextPageKey) {
+    const page = await client.getProblems({ nextPageKey });
+    all.push(...((page.problems as unknown as ProbRow[]) || []));
+    nextPageKey = (page as unknown as { nextPageKey?: string }).nextPageKey;
+  }
+  return all;
+}
+
 // Paginate any entity query
 async function fetchAll(
   client: MonitoredEntitiesClient,
@@ -136,12 +154,12 @@ export default async function queryTopology(payload: QueryRequest = {}): Promise
         fields: `${BASE_FIELDS},${REL_FIELDS}`,
         pageSize: 500, ...timeParams,
       }),
-      probClient.getProblems({
+      fetchAllProblems(probClient, {
         problemSelector: 'status("OPEN")',
         fields: 'affectedEntities,severityLevel',
         pageSize: 500,
         ...timeParams,
-      }).catch(() => ({ problems: [] })),
+      }).catch(() => []),
     ]);
 
     // ── Build entity ID → displayName lookup ──────────────────────────────────
@@ -154,13 +172,15 @@ export default async function queryTopology(payload: QueryRequest = {}): Promise
     // ── Problems map: entityId → worst severity ───────────────────────────────
 
     const problems: Record<string, string> = {};
-    const rawProblems = (problemsRes as { problems?: unknown[] }).problems || [];
+    const rawProblems = problemsRes;
     for (const p of rawProblems as Array<{ severityLevel?: string; affectedEntities?: Array<{ entityId: { id: string } }> }>) {
       const sev = p.severityLevel || 'CUSTOM_ALERT';
+      const sevRank = SEV_RANK[sev] ?? Number.MAX_SAFE_INTEGER;
       for (const ae of p.affectedEntities || []) {
         const eid = ae?.entityId?.id ?? (ae as unknown as string);
         if (!eid) continue;
-        if (!(eid in problems) || SEV_RANK[sev] < SEV_RANK[problems[eid]]) {
+        const curRank = SEV_RANK[problems[eid]] ?? Number.MAX_SAFE_INTEGER;
+        if (!(eid in problems) || sevRank < curRank) {
           problems[eid] = sev;
         }
       }
@@ -276,7 +296,7 @@ export default async function queryTopology(payload: QueryRequest = {}): Promise
 
     // SERVICE-only edges (display names, for backward-compat with App.jsx detectApplications)
     const serviceEdges = edges
-      .filter(e => e.edgeType === 'CALLS' && !e.source.startsWith('APPLICATION-'))
+      .filter(e => e.edgeType === 'CALLS' && entityDetails[e.source]?.entityType !== 'APPLICATION')
       .map(e => ({ source: e.source, target: e.target }));
 
     const allServiceNames = services.map(s => s.displayName);

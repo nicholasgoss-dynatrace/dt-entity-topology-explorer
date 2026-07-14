@@ -78,25 +78,39 @@ function Row({ label, value }) {
   );
 }
 
+const SEV_LABEL = {
+  AVAILABILITY:            'AVL',
+  ERROR:                   'ERR',
+  PERFORMANCE_DEGRADATION: 'PERF',
+  RESOURCE_CONTENTION:     'RES',
+  CUSTOM_ALERT:            'ALRT',
+};
+const SEV_FULL = {
+  AVAILABILITY:            'Availability problem',
+  ERROR:                   'Error problem',
+  PERFORMANCE_DEGRADATION: 'Performance degradation',
+  RESOURCE_CONTENTION:     'Resource contention',
+  CUSTOM_ALERT:            'Custom alert',
+};
+
 function ProblemBadge({ severity }) {
   if (!severity) return null;
   const color = problemColor(severity);
-  const label = {
-    AVAILABILITY:            'AVL',
-    ERROR:                   'ERR',
-    PERFORMANCE_DEGRADATION: 'PERF',
-    RESOURCE_CONTENTION:     'RES',
-    CUSTOM_ALERT:            'ALRT',
-  }[severity] || '!';
+  const label = SEV_LABEL[severity] || '!';
+  const full  = SEV_FULL[severity]  || 'Open problem';
   return (
-    <span style={{
-      position: 'absolute', top: -6, right: -6,
-      background: color, color: '#fff',
-      fontSize: 8, fontWeight: 800, letterSpacing: '0.04em',
-      padding: '2px 5px', borderRadius: 8,
-      boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-      lineHeight: 1.2, zIndex: 10,
-    }}>
+    <span
+      role="img"
+      aria-label={full}
+      title={full}
+      style={{
+        position: 'absolute', top: -6, right: -6,
+        background: color, color: '#fff',
+        fontSize: 8, fontWeight: 800, letterSpacing: '0.04em',
+        padding: '2px 5px', borderRadius: 8,
+        boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+        lineHeight: 1.2, zIndex: 10,
+      }}>
       {label}
     </span>
   );
@@ -338,19 +352,18 @@ function FlowGraph({ app, entityDetails, allEdges, problems }) {
 
     // APP → first-entry service edges
     if (app.isDtApp) {
+      const calledTargets = new Set(app.edges.map(e => e.target));
       for (const svc of app.services) {
-        // Edge from APP node to services that have no caller within this app
-        const hasCallerInApp = app.edges.some(e => e.target === svc);
-        if (!hasCallerInApp) addEdge(app.entityId, svc, 'CALLS');
+        if (!calledTargets.has(svc)) addEdge(app.entityId, svc, 'CALLS');
       }
     }
 
     // Process group nodes + edges from services
+    const appServicesSet = new Set(app.services);
     const appPgIds = new Set();
     for (const edge of allEdges) {
       if (edge.edgeType !== 'RUNS_ON') continue;
-      // source is service display name
-      if (!app.services.includes(edge.source)) continue;
+      if (!appServicesSet.has(edge.source)) continue;
       const pgDetail = entityDetails[edge.target];
       if (!pgDetail || pgDetail.entityType !== 'PROCESS_GROUP') continue;
       addNode(edge.target, 'processGroupNode', {
@@ -391,12 +404,12 @@ function FlowGraph({ app, entityDetails, allEdges, problems }) {
 
   useEffect(() => {
     if (nodesInitialized) setNodes(ns => applyDagreLayout(ns, edges));
-  }, [nodesInitialized]);
+  }, [nodesInitialized, edges, setNodes]);
 
   useEffect(() => {
     setNodes(rfNodes);
     setEdges(rfEdges);
-  }, [rfNodes, rfEdges]);
+  }, [rfNodes, rfEdges, setNodes, setEdges]);
 
   const totalNodes  = rfNodes.length;
   const graphHeight = Math.max(380, Math.min(1400, totalNodes * 130));
@@ -432,9 +445,9 @@ function FlowGraph({ app, entityDetails, allEdges, problems }) {
         ].map(({ color, label, dashed }) => (
           <Flex key={label} alignItems="center" gap={5}>
             {dashed
-              ? <svg width={14} height={10}><line x1="0" y1="5" x2="14" y2="5"
+              ? <svg width={14} height={10} aria-hidden="true"><line x1="0" y1="5" x2="14" y2="5"
                   stroke={color} strokeWidth={2} strokeDasharray="3 2" /></svg>
-              : <span style={{ display: 'inline-block', width: 10, height: 10,
+              : <span aria-hidden="true" style={{ display: 'inline-block', width: 10, height: 10,
                                borderRadius: 2, background: color, flexShrink: 0 }} />}
             <span style={{ fontSize: 11, color: 'var(--dt-colors-text-secondary-default)' }}>
               {label}
@@ -473,8 +486,7 @@ function ApplicationCard({ app, entityDetails, allEdges, problems,
                            color: 'var(--dt-colors-text-secondary-default)' }}>
               {app.serviceCount} service{app.serviceCount !== 1 ? 's' : ''}
               {' · '}
-              {app.edges.filter(e => e.edgeType === 'CALLS' || !e.edgeType).length} dependenc
-              {app.edges.length !== 1 ? 'ies' : 'y'}
+              {(() => { const n = app.edges.filter(e => e.edgeType === 'CALLS' || !e.edgeType).length; return `${n} dependenc${n !== 1 ? 'ies' : 'y'}`; })()}
             </span>
           </Flex>
           <Flex gap={8} flexWrap="wrap">
@@ -503,7 +515,7 @@ function ApplicationCard({ app, entityDetails, allEdges, problems,
                 color: hasProblem ? problemColor(problems[svcDetail.entityId]) : a,
                 border: `1px solid color-mix(in oklab, ${hasProblem ? problemColor(problems[svcDetail.entityId]) : a} 35%, transparent)`,
               }}>
-                {hasProblem ? '⚠ ' : ''}{svc}
+                {hasProblem && <span role="img" aria-label={`Problem: ${problems[svcDetail.entityId]}`}>⚠ </span>}{svc}
               </span>
             );
           })}

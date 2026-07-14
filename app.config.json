@@ -1,10 +1,10 @@
 {
-  "environmentUrl": "https://suz7562h.sprint.apps.dynatracelabs.com",
+  "environmentUrl": "https://dvq23986.apps.dynatrace.com",
   "app": {
     "id": "my.topologyexplorer",
     "name": "Entity Explorer",
     "description": "Visualize service dependencies and export to any CMDB",
-    "version": "2.15.0",
+    "version": "2.16.0",
     "scopes": [
       {
         "name": "environment-api:entities:read",
@@ -17,6 +17,10 @@
       {
         "name": "environment-api:topology:read",
         "comment": "Read smartscape topology and service dependency data"
+      },
+      {
+        "name": "environment-api:problems:read",
+        "comment": "Read open problems for severity badges on affected nodes"
       }
     ]
   },

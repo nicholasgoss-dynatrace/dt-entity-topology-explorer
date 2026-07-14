@@ -8,11 +8,9 @@ import {
 import '@xyflow/react/dist/style.css';
 import dagre from 'dagre';
 
-import { Surface } from '@dynatrace/strato-components/layouts';
-import { Flex } from '@dynatrace/strato-components/layouts';
+import { Surface, Flex } from '@dynatrace/strato-components/layouts';
 import { Button } from '@dynatrace/strato-components/buttons';
-import { Heading } from '@dynatrace/strato-components/typography';
-import { Paragraph } from '@dynatrace/strato-components/typography';
+import { Heading, Paragraph } from '@dynatrace/strato-components/typography';
 import { AnalyticsIcon } from '@dynatrace/strato-icons';
 
 // ── Brand palette ──────────────────────────────────────────────────────────────

@@ -396,11 +396,13 @@ function AppContent() {
       const pgTechs   = pgDetails.map(p => p.pgTechnologies || '').join('; ');
       const pgVers    = pgDetails.map(p => p.version || '').join('; ');
 
-      // Find hosts these PGs run on
-      const hostDetails = pgEdges.flatMap(pgEdge => {
-        const hostEdges = hostedOnBySrc[pgEdge.target] || [];
-        return hostEdges.map(e => entityDetails[e.target]).filter(Boolean);
-      });
+      // Find hosts these PGs run on (deduplicate by entityId — multiple PGs may share a host)
+      const hostDetails = [...new Map(
+        pgEdges.flatMap(pgEdge => {
+          const hostEdges = hostedOnBySrc[pgEdge.target] || [];
+          return hostEdges.map(e => entityDetails[e.target]).filter(Boolean);
+        }).map(h => [h.entityId, h])
+      ).values()];
       const hostNames = hostDetails.map(h => h.displayName).join('; ');
       const hostIds   = hostDetails.map(h => h.entityId).join('; ');
       const osList    = hostDetails.map(h => h.osType    || '').join('; ');
